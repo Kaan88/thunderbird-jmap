@@ -2672,7 +2672,7 @@ index 082fc0d077b..0517d5bb32a 100644
        incoming.type == "exchange" ||
        incoming.type == "graph"
 diff --git a/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs b/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
-index b1a68545c6c..2fd1cc4d7f1 100644
+index b1a68545c6c..5131f5b03e9 100644
 --- a/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
 +++ b/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
 @@ -115,6 +115,13 @@ class EmailIncomingForm extends AccountHubStep {
@@ -2704,7 +2704,7 @@ index b1a68545c6c..2fd1cc4d7f1 100644
      } else {
        // We get the input value here instead of using the config, because the
        // config isn't updated until the value is valid, which leads to stale
-@@ -418,13 +430,25 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -418,13 +430,33 @@ class EmailIncomingForm extends AccountHubStep {
          3: "exchange",
          4: "ews",
          5: "graph",
@@ -2727,13 +2727,21 @@ index b1a68545c6c..2fd1cc4d7f1 100644
 +        url?.protocol == "http:"
 +          ? Ci.nsMsgSocketType.plain
 +          : Ci.nsMsgSocketType.SSL;
++      // OAuth details found for another server no longer apply; they are
++      // discovered again when the config is verified.
++      const issuerHost = URL.parse(
++        config.incoming.jmapOAuth?.issuer ?? ""
++      )?.hostname;
++      if (issuerHost && url?.hostname != issuerHost) {
++        config.incoming.jmapOAuth = null;
++      }
 +    } else if (config.isExchangeConfig()) {
 +      // An EWS configuration won't have any of the default fields available
 +      // to edit.
        config = this.#getExchangeConfigValues(config);
      } else {
        config = this.#getDefaultConfigValues(config);
-@@ -456,13 +480,13 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -456,13 +488,13 @@ class EmailIncomingForm extends AccountHubStep {
     */
    updateFields(config) {
      assert(config instanceof AccountConfig);
@@ -2750,7 +2758,7 @@ index b1a68545c6c..2fd1cc4d7f1 100644
      this.#incomingHostname.value = config.incoming.hostname;
      this.#incomingConnectionSecurity.value = InputSanitizer.enum(
        config.incoming.socketType,
-@@ -478,6 +502,10 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -478,6 +510,10 @@ class EmailIncomingForm extends AccountHubStep {
      }
  
      this.#incomingExchangeUrl.value =
@@ -2761,7 +2769,7 @@ index b1a68545c6c..2fd1cc4d7f1 100644
        config.incoming.exchangeURL ||
        (config.incoming.hostname &&
          config.incoming.hostname[0] != "." &&
-@@ -597,6 +625,13 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -597,6 +633,13 @@ class EmailIncomingForm extends AccountHubStep {
     * @param {boolean} isExchange - If the config is an EWS config.
     */
    #updateConfigInputsVisibility(isExchange) {
@@ -2870,20 +2878,26 @@ index fc080c48220..4a7ebc5498f 100644
  
  // enum consts
 diff --git a/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs b/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
-index f56e8e4a542..2d5081f85d5 100644
+index f56e8e4a542..a800d215ab9 100644
 --- a/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
 +++ b/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
-@@ -10,6 +10,9 @@ const lazy = {};
+@@ -10,9 +10,15 @@ const lazy = {};
  ChromeUtils.defineESModuleGetters(lazy, {
    CreateInBackend:
      "resource:///modules/accountcreation/CreateInBackend.sys.mjs",
-+  JmapAuth: "resource:///modules/jmap/JmapAuth.sys.mjs",
 +  JmapDiscovery: "resource:///modules/accountcreation/JmapDiscovery.sys.mjs",
 +  JmapOAuth: "resource:///modules/jmap/JmapOAuth.sys.mjs",
    MailTelemetry: "moz-src:///comm/mail/modules/MailTelemetry.sys.mjs",
    OAuth2Module: "resource:///modules/OAuth2Module.sys.mjs",
  });
-@@ -217,6 +220,7 @@ export class ConfigVerifier {
++// JmapAuth exports plain functions, so import the whole module namespace.
++ChromeUtils.defineLazyGetter(lazy, "JmapAuth", () =>
++  ChromeUtils.importESModule("resource:///modules/jmap/JmapAuth.sys.mjs")
++);
+ ChromeUtils.defineLazyGetter(
+   lazy,
+   "l10n",
+@@ -217,6 +223,7 @@ export class ConfigVerifier {
     * Clear out the server we had created for use during testing.
     */
    cleanup() {
@@ -2891,7 +2905,7 @@ index f56e8e4a542..2d5081f85d5 100644
      try {
        this.signal.removeEventListener("abort", this);
        if (this.server) {
-@@ -258,6 +262,55 @@ export class ConfigVerifier {
+@@ -258,6 +265,55 @@ export class ConfigVerifier {
      }
    }
  
@@ -2947,7 +2961,7 @@ index f56e8e4a542..2d5081f85d5 100644
    /**
     * @param {nsIURI} url - The URL being processed.
     */
-@@ -370,6 +423,9 @@ export class ConfigVerifier {
+@@ -370,6 +426,9 @@ export class ConfigVerifier {
     */
    async verifyConfig(config, alter) {
      this.alter = alter;
@@ -2957,7 +2971,7 @@ index f56e8e4a542..2d5081f85d5 100644
      return new Promise((resolve, reject) => {
        this.config = config;
        this._triedBothUsernames = false;
-@@ -457,6 +513,190 @@ export class ConfigVerifier {
+@@ -457,6 +516,190 @@ export class ConfigVerifier {
      });
    }
  
@@ -4023,6 +4037,238 @@ index ec6ec53fe5b..f5e5873c8b7 100644
                <option id="incomingProtocolIMAP"
                        value="1">IMAP</option>
                <option id="incomingProtocolPOP3"
+diff --git a/mail/components/accountcreation/test/browser/browser.toml b/mail/components/accountcreation/test/browser/browser.toml
+index f1e2afb803b..f367d427bd5 100644
+--- a/mail/components/accountcreation/test/browser/browser.toml
++++ b/mail/components/accountcreation/test/browser/browser.toml
+@@ -71,3 +71,5 @@ tags = ["oauth"]
+ 
+ ["browser_verifyConfig.js"]
+ tags = ["oauth"]
++
++["browser_accountHubEmailJmapEdit.js"]
+diff --git a/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js
+new file mode 100644
+index 00000000000..cb5a25ee082
+--- /dev/null
++++ b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js
+@@ -0,0 +1,216 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Regression test: "Edit configuration" on a found JMAP config must open the
++ * incoming config form (which supports a JMAP session URL), and continuing
++ * from there must validate directly instead of showing the outgoing form.
++ */
++
++"use strict";
++
++const { sinon } = ChromeUtils.importESModule(
++  "resource://testing-common/Sinon.sys.mjs"
++);
++const { FindConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/FindConfig.sys.mjs"
++);
++const { AccountConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/AccountConfig.sys.mjs"
++);
++const { ConfigVerifier } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/ConfigVerifier.sys.mjs"
++);
++
++const SESSION_URL = "https://mail.example.com/jmap/session";
++const EMAIL = "john.doe@example.com";
++
++let parallelAutoDiscoveryStub;
++let verifyConfigStub;
++
++add_setup(async () => {
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      ["mail.jmap.enabled", true],
++      ["mail.accounthub.manualconfig.enabled", true],
++    ],
++  });
++  parallelAutoDiscoveryStub = sinon.stub(FindConfig, "parallelAutoDiscovery");
++  verifyConfigStub = sinon
++    .stub(ConfigVerifier.prototype, "verifyConfig")
++    .rejects(new Error("Stubbed verification failure"));
++  registerCleanupFunction(async () => {
++    parallelAutoDiscoveryStub.restore();
++    verifyConfigStub.restore();
++    await SpecialPowers.popPrefEnv();
++  });
++});
++
++function createJmapConfig() {
++  const config = new AccountConfig();
++  config.source = AccountConfig.kSourceXML;
++  config.subSource = "xml-from-isp-https";
++  config.incoming.type = "jmap";
++  config.incoming.hostname = "mail.example.com";
++  config.incoming.port = 443;
++  config.incoming.socketType = Ci.nsMsgSocketType.SSL;
++  config.incoming.username = EMAIL;
++  config.incoming.auth = Ci.nsMsgAuthMethod.OAuth2;
++  config.incoming.sessionUrl = SESSION_URL;
++  config.incoming.jmapCapabilities = [
++    "urn:ietf:params:jmap:core",
++    "urn:ietf:params:jmap:mail",
++    "urn:ietf:params:jmap:submission",
++  ];
++  config.incoming.jmapOAuth = {
++    issuer: "https://mail.example.com",
++    authorizationEndpoint: "https://mail.example.com/authorize",
++    tokenEndpoint: "https://mail.example.com/token",
++    scopes: "urn:ietf:params:jmap:core urn:ietf:params:jmap:mail",
++    displayName: "Example",
++  };
++  return config;
++}
++
++async function openAccountHubDialog() {
++  await window.openAccountHub("MAIL");
++  await BrowserTestUtils.waitForMutationCondition(
++    document.body,
++    { childList: true, subtree: true },
++    () => document.querySelector("account-hub-container")
++  );
++  const hub = document.querySelector("account-hub-container");
++  await BrowserTestUtils.waitForMutationCondition(
++    hub,
++    { childList: true },
++    () => !!hub.shadowRoot.querySelector(".account-hub-dialog")
++  );
++  const dialog = hub.shadowRoot.querySelector(".account-hub-dialog");
++  await TestUtils.waitForCondition(
++    () => dialog.open && dialog.querySelector("email-auto-form"),
++    "The account hub email form should be available"
++  );
++  await TestUtils.waitForCondition(
++    () => BrowserTestUtils.isVisible(dialog.querySelector("email-auto-form")),
++    "The email auto form should be visible"
++  );
++  return dialog;
++}
++
++async function typeInto(input, text) {
++  input.value = "";
++  input.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(input, {});
++  const inputEvent = BrowserTestUtils.waitForEvent(
++    input,
++    "input",
++    false,
++    event => event.target.value === text
++  );
++  EventUtils.sendString(text, window);
++  await inputEvent;
++}
++
++async function closeDialog(dialog, currentStep) {
++  const closeButton = currentStep.shadowRoot
++    .querySelector("account-hub-header")
++    .shadowRoot.querySelector("#closeButton");
++  const closeEvent = BrowserTestUtils.waitForEvent(dialog, "close");
++  EventUtils.synthesizeMouseAtCenter(closeButton, {});
++  await closeEvent;
++}
++
++add_task(async function test_jmapEditConfiguration() {
++  const config = createJmapConfig();
++  parallelAutoDiscoveryStub.returns({
++    next() {
++      return Promise.resolve({ value: config, done: true });
++    },
++  });
++
++  const dialog = await openAccountHubDialog();
++  const emailForm = dialog.querySelector("email-auto-form");
++  const footerForward = dialog.querySelector("#emailFooter #forward");
++
++  await typeInto(emailForm.querySelector("#realName"), "John Doe");
++  await typeInto(emailForm.querySelector("#email"), EMAIL);
++  Assert.ok(!footerForward.disabled, "Continue button should be enabled");
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++
++  const configFound = dialog.querySelector("email-config-found");
++  await BrowserTestUtils.waitForAttributeRemoval("hidden", configFound);
++  Assert.ok(
++    parallelAutoDiscoveryStub.calledOnce,
++    "Config discovery should have been called once"
++  );
++
++  const editButton = configFound.querySelector("#editConfiguration");
++  await TestUtils.waitForCondition(
++    () => BrowserTestUtils.isVisible(editButton),
++    "Edit configuration should be visible for the JMAP config"
++  );
++  editButton.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(editButton, {});
++
++  const incomingForm = dialog.querySelector("#emailIncomingConfigSubview");
++  await TestUtils.waitForCondition(
++    () => incomingForm && BrowserTestUtils.isVisible(incomingForm),
++    "The incoming config form should be shown for a JMAP config"
++  );
++  Assert.ok(
++    BrowserTestUtils.isHidden(configFound),
++    "The config found step should be hidden"
++  );
++  Assert.equal(
++    incomingForm.localName,
++    "email-manual-incoming-form",
++    "The legacy incoming config form should be used"
++  );
++  Assert.equal(
++    incomingForm.querySelector("#incomingProtocol").value,
++    "6",
++    "JMAP should be the selected protocol"
++  );
++  const urlInput = incomingForm.querySelector("#incomingExchangeUrl");
++  Assert.ok(
++    BrowserTestUtils.isVisible(urlInput),
++    "The session URL input should be visible"
++  );
++  Assert.equal(urlInput.value, SESSION_URL, "Should show the session URL");
++
++  // Continuing validates the JMAP config directly; there is no outgoing step.
++  await TestUtils.waitForCondition(
++    () => !footerForward.disabled,
++    "Continue should be enabled for the JMAP config"
++  );
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  await TestUtils.waitForCondition(
++    () => verifyConfigStub.called,
++    "The JMAP config should be validated directly"
++  );
++  Assert.equal(
++    verifyConfigStub.firstCall.args[0].incoming.type,
++    "jmap",
++    "A JMAP config should be validated"
++  );
++  Assert.equal(
++    verifyConfigStub.firstCall.args[0].incoming.sessionUrl,
++    SESSION_URL,
++    "The validated config should keep the session URL"
++  );
++  // Let the stubbed failure be handled.
++  await TestUtils.waitForTick();
++  const outgoingForm = dialog.querySelector("#emailOutgoingConfigSubview");
++  Assert.ok(
++    !outgoingForm || BrowserTestUtils.isHidden(outgoingForm),
++    "The outgoing config form should not be shown for JMAP"
++  );
++  Assert.ok(
++    BrowserTestUtils.isVisible(incomingForm),
++    "Should stay on the incoming config form after the failed validation"
++  );
++
++  await closeDialog(dialog, incomingForm);
++});
 diff --git a/mail/components/accountcreation/test/xpcshell/test_jmapDiscovery.js b/mail/components/accountcreation/test/xpcshell/test_jmapDiscovery.js
 new file mode 100644
 index 00000000000..79a1da08783
@@ -4463,24 +4709,348 @@ index 00000000000..79a1da08783
 +  config.preferJmap();
 +  Assert.equal(config.incoming.type, "jmap");
 +});
+diff --git a/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js b/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js
+new file mode 100644
+index 00000000000..8d8048c8b0e
+--- /dev/null
++++ b/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js
+@@ -0,0 +1,182 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Tests ConfigVerifier.verifyJmapOAuthConfig() end to end: real OAuth2
++ * discovery, the real JmapAuth.getOAuth2TokenForDetails() sign-in against the
++ * test OAuth2 server, and a Bearer-authenticated JMAP session request.
++ * JmapAuth is deliberately not stubbed, so a broken lazy import of it fails
++ * here.
++ */
++
++const { AccountConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/AccountConfig.sys.mjs"
++);
++const { ConfigVerifier } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/ConfigVerifier.sys.mjs"
++);
++const { JmapOAuth } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapOAuth.sys.mjs"
++);
++const { OAuth2TestUtils } = ChromeUtils.importESModule(
++  "resource://testing-common/mailnews/OAuth2TestUtils.sys.mjs"
++);
++
++do_get_profile();
++
++const ISSUER = "https://oauth.test.test";
++const HOSTNAME = "oauth.test.test";
++const USERNAME = "user@test.test";
++const SESSION_URL = `${ISSUER}/jmap/session`;
++const MAIL = "urn:ietf:params:jmap:mail";
++
++let sessionHasMail = true;
++const sessionAuthHeaders = [];
++const originalPrefValues = JmapOAuth.prefValues;
++
++add_setup(async function () {
++  const oAuth2Server = await OAuth2TestUtils.startServer({
++    username: "user",
++    password: "password",
++  });
++  oAuth2Server.httpServer.registerPathHandler(
++    "/.well-known/oauth-authorization-server",
++    (request, response) => {
++      response.setHeader("Content-Type", "application/json", false);
++      response.write(
++        JSON.stringify({
++          issuer: ISSUER,
++          authorization_endpoint: `${ISSUER}/form`,
++          token_endpoint: `${ISSUER}/token`,
++          response_types_supported: ["code"],
++          grant_types_supported: ["authorization_code", "refresh_token"],
++          code_challenge_methods_supported: ["S256"],
++        })
++      );
++    }
++  );
++  oAuth2Server.httpServer.registerPathHandler(
++    "/jmap/session",
++    (request, response) => {
++      const auth = request.hasHeader("Authorization")
++        ? request.getHeader("Authorization")
++        : "";
++      sessionAuthHeaders.push(auth);
++      response.setHeader("Content-Type", "application/json", false);
++      if (auth != "Bearer access_token") {
++        response.setStatusLine("1.1", 401, "Unauthorized");
++        response.write("{}");
++        return;
++      }
++      response.write(
++        JSON.stringify(
++          sessionHasMail
++            ? {
++                apiUrl: `${ISSUER}/jmap/api/`,
++                capabilities: { [MAIL]: {} },
++                primaryAccounts: { [MAIL]: "a1" },
++              }
++            : { apiUrl: `${ISSUER}/jmap/api/`, capabilities: {} }
++        )
++      );
++    }
++  );
++
++  // OAuth2TestUtils.submitOAuthURL insists on a "localhost" redirect host,
++  // while JmapOAuth uses 127.0.0.1. Only that one value is changed.
++  JmapOAuth.prefValues = function (...args) {
++    const values = originalPrefValues.apply(this, args);
++    values["oauth2.redirectionEndpoint"] = "http://localhost/";
++    return values;
++  };
++
++  registerCleanupFunction(async () => {
++    JmapOAuth.prefValues = originalPrefValues;
++    await Services.logins.removeAllLoginsAsync();
++    OAuth2TestUtils.forgetObjects();
++    OAuth2TestUtils.stopServer();
++  });
++});
++
++/**
++ * Build a JMAP OAuth2 config, using real discovery and the test client
++ * (the test token endpoint only accepts test_client_id/test_secret).
++ *
++ * @returns {Promise<AccountConfig>}
++ */
++async function makeConfig() {
++  const info = await JmapOAuth.discover(SESSION_URL);
++  Assert.ok(info, "OAuth2 metadata is discovered");
++  Assert.equal(info.issuerKey, HOSTNAME);
++  info.client = { clientId: "test_client_id", clientSecret: "test_secret" };
++
++  const config = new AccountConfig();
++  const incoming = config.incoming;
++  incoming.type = "jmap";
++  incoming.hostname = HOSTNAME;
++  incoming.port = 443;
++  incoming.socketType = Ci.nsMsgSocketType.SSL;
++  incoming.sessionUrl = SESSION_URL;
++  incoming.username = USERNAME;
++  incoming.auth = Ci.nsMsgAuthMethod.OAuth2;
++  incoming.jmapOAuth = info;
++  return config;
++}
++
++/**
++ * Run verifyJmapOAuthConfig() and approve the OAuth2 prompt.
++ *
++ * @param {AccountConfig} config
++ * @returns {Promise<AccountConfig>}
++ */
++async function verifyWithApproval(config) {
++  OAuth2TestUtils.forgetObjects();
++  await Services.logins.removeAllLoginsAsync();
++  const externalOAuthURL = OAuth2TestUtils.promiseExternalOAuthURL();
++  const verifier = new ConfigVerifier(null, new AbortController().signal);
++  const promise = verifier.verifyJmapOAuthConfig(config);
++  // Don't leave a rejection unhandled while the prompt is driven.
++  promise.catch(() => {});
++  const url = await externalOAuthURL;
++  await OAuth2TestUtils.submitOAuthURL(url, {
++    expectedHint: USERNAME,
++    expectedScope: new URL(url).searchParams.get("scope"),
++    username: "user",
++    password: "password",
++  });
++  return promise;
++}
++
++add_task(async function test_verifyJmapOAuthConfig() {
++  sessionHasMail = true;
++  const before = sessionAuthHeaders.length;
++  const config = await verifyWithApproval(await makeConfig());
++  Assert.deepEqual(
++    config.incoming.jmapCapabilities,
++    [MAIL],
++    "the session capabilities are recorded"
++  );
++  Assert.equal(config.incoming.auth, Ci.nsMsgAuthMethod.OAuth2);
++  Assert.ok(config.incoming.jmapOAuth, "the OAuth2 info is kept");
++  Assert.equal(
++    config.incoming.jmapOAuth.client?.clientId,
++    "test_client_id",
++    "the resolved client is kept"
++  );
++  Assert.deepEqual(
++    sessionAuthHeaders.slice(before),
++    ["Bearer access_token"],
++    "the session was requested with the OAuth2 token"
++  );
++});
++
++add_task(async function test_verifyJmapOAuthConfig_noMailAccount() {
++  sessionHasMail = false;
++  await Assert.rejects(
++    verifyWithApproval(await makeConfig()),
++    /./,
++    "a session without a primary mail account is a failed login"
++  );
++  sessionHasMail = true;
++});
 diff --git a/mail/components/accountcreation/test/xpcshell/xpcshell.toml b/mail/components/accountcreation/test/xpcshell/xpcshell.toml
-index ea215f03cf8..8bc84fc41c7 100644
+index ea215f03cf8..70400fee0e0 100644
 --- a/mail/components/accountcreation/test/xpcshell/xpcshell.toml
 +++ b/mail/components/accountcreation/test/xpcshell/xpcshell.toml
-@@ -30,6 +30,8 @@ skip-if = [
- ["test_fetchHTTP.js"]
- 
- ["test_findConfig.js"]
+@@ -1,51 +1,57 @@
+-[DEFAULT]
+-support-files = ["data/*"]
+-prefs = [
+-  "carddav.setup.loglevel=Debug",
+-  "mail.setup.loglevel=Debug"
+-]
+-
+-["test_accountConfig.js"]
+-
+-["test_accountCreationUtils.js"]
+-
+-["test_addonInstaller.js"]
+-
+-["test_autoconfigUtils.js"]
+-
+-["test_autoconfigXML.js"]
+-tags = ["oauth"]
+-
+-["test_configVerifier.js"]
+-
+-["test_createInBackend.js"]
+-
+-["test_exchangeAutoDiscover.js"]
+-
+-["test_fetchConfig.js"]
+-skip-if = [
+-  "os == 'win' && msix", # MSIX cannot write to application directory
+-]
+-
+-["test_fetchHTTP.js"]
+-
+-["test_findConfig.js"]
+-requesttimeoutfactor = 2
+-tags = ["oauth"]
+-
+-["test_firstRun.js"]
+-tags = ["addrbook"]
+-skip-if = ["enterprise"]
+-
+-["test_firstRun_enterprise.js"]
+-run-if = ["enterprise"]
+-
+-["test_guessConfig.js"]
+-
+-["test_ldapDirectoryUtils.js"]
+-tags = ["addrbook"]
+-
+-["test_remoteAddressBookUtils.js"]
+-tags = ["addrbook", "carddav"]
+-
+-["test_sanitizer.js"]
++[DEFAULT]
++support-files = ["data/*"]
++prefs = [
++  "carddav.setup.loglevel=Debug",
++  "mail.setup.loglevel=Debug"
++]
++
++["test_accountConfig.js"]
++
++["test_accountCreationUtils.js"]
++
++["test_addonInstaller.js"]
++
++["test_autoconfigUtils.js"]
++
++["test_autoconfigXML.js"]
++tags = ["oauth"]
++
++["test_configVerifier.js"]
++
++["test_createInBackend.js"]
++
++["test_exchangeAutoDiscover.js"]
++
++["test_fetchConfig.js"]
++skip-if = [
++  "os == 'win' && msix", # MSIX cannot write to application directory
++]
++
++["test_fetchHTTP.js"]
++
++["test_findConfig.js"]
 +
 +["test_jmapDiscovery.js"]
- requesttimeoutfactor = 2
- tags = ["oauth"]
- 
++requesttimeoutfactor = 2
++tags = ["oauth"]
++
++["test_firstRun.js"]
++tags = ["addrbook"]
++skip-if = ["enterprise"]
++
++["test_firstRun_enterprise.js"]
++run-if = ["enterprise"]
++
++["test_guessConfig.js"]
++
++["test_jmapOAuthVerify.js"]
++requesttimeoutfactor = 2
++tags = ["oauth"]
++
++["test_ldapDirectoryUtils.js"]
++tags = ["addrbook"]
++
++["test_remoteAddressBookUtils.js"]
++tags = ["addrbook", "carddav"]
++
++["test_sanitizer.js"]
 diff --git a/mail/components/accountcreation/views/email.mjs b/mail/components/accountcreation/views/email.mjs
-index 806e0d75826..574864a4ab2 100644
+index 806e0d75826..377d0914c23 100644
 --- a/mail/components/accountcreation/views/email.mjs
 +++ b/mail/components/accountcreation/views/email.mjs
-@@ -1805,17 +1805,37 @@ class AccountHubEmail extends HTMLElement {
+@@ -815,8 +815,13 @@ class AccountHubEmail extends HTMLElement {
+           false
+         );
+ 
++        // The new manual config subviews don't know JMAP; JMAP configs are
++        // edited in the incoming config form, which has the session URL.
++        const isJmap = this.#currentConfig.isJmapConfig();
++
+         if (
+           newManualConfigPref &&
++          !isJmap &&
+           this.#currentState == "emailConfigFoundSubview"
+         ) {
+           const incomingType = this.#currentConfig.incoming.type;
+@@ -831,7 +836,7 @@ class AccountHubEmail extends HTMLElement {
+           break;
+         }
+ 
+-        if (newManualConfigPref) {
++        if (newManualConfigPref && !isJmap) {
+           this.#showProtocolSelectSubview();
+           break;
+         }
+@@ -1225,7 +1230,11 @@ class AccountHubEmail extends HTMLElement {
+ 
+         break;
+       case "incomingConfigSubview":
+-        if (stateData.config.isExchangeConfig()) {
++        // Exchange and JMAP have no separate outgoing server to configure.
++        if (
++          stateData.config.isExchangeConfig() ||
++          stateData.config.isJmapConfig()
++        ) {
+           if (!(await this.#validateAccountConfig(stateData.config))) {
+             break;
+           }
+@@ -1805,17 +1814,37 @@ class AccountHubEmail extends HTMLElement {
    async #validateAccountConfig(accountConfig) {
      this.#currentConfig = this.#fillAccountConfig(accountConfig);
  
@@ -4526,7 +5096,7 @@ index 806e0d75826..574864a4ab2 100644
        try {
          const result = await this.#createAccount(
            "account-hub-creating-account"
-@@ -1835,7 +1855,15 @@ class AccountHubEmail extends HTMLElement {
+@@ -1835,7 +1864,15 @@ class AccountHubEmail extends HTMLElement {
      this.#states[this.#currentState].previousStep = currentState;
      this.#currentSubview.setState();
  
@@ -4543,7 +5113,7 @@ index 806e0d75826..574864a4ab2 100644
        this.#currentSubview.showNotification({
          title: creationError.title || creationError.message,
          description: creationError.text,
-@@ -2132,6 +2160,10 @@ class AccountHubEmail extends HTMLElement {
+@@ -2132,6 +2169,10 @@ class AccountHubEmail extends HTMLElement {
        this.#configVerifier = null;
        Glean.mail.failedEmailAccountSetup[telemetryKey].add(1);
  
@@ -10603,10 +11173,10 @@ index 566bbee8db5..f96601fd3db 100644
      "prompts",
      "search",
 diff --git a/mail/locales/en-US/messenger/accountManager.ftl b/mail/locales/en-US/messenger/accountManager.ftl
-index 2961457d505..fcc742263a9 100644
+index 2961457d505..53a1ee0e302 100644
 --- a/mail/locales/en-US/messenger/accountManager.ftl
 +++ b/mail/locales/en-US/messenger/accountManager.ftl
-@@ -47,3 +47,28 @@ panel-manage-spam = Manage spam
+@@ -47,3 +47,30 @@ panel-manage-spam = Manage spam
  # Variables:
  # $account (String) - The account name.
  spam-settings-alert-message = Problem detected with the spam settings for { $account }. Would you like to review them before saving the changes?
@@ -10626,6 +11196,8 @@ index 2961457d505..fcc742263a9 100644
 +jmap-signin-checking = Checking whether the server supports sign-in…
 +jmap-signin-progress = Complete the sign-in in your web browser…
 +jmap-signin-done = Signed in.
++jmap-signin-cancel-button = Cancel sign-in
++jmap-signin-cancelled = Sign-in was cancelled. The previous sign-in method is still used.
 +jmap-signin-signing-out = Switching to password sign-in…
 +jmap-signin-signed-out = Password sign-in is now used. You may be asked for your password.
 +jmap-signin-setup-summary = Server setup
@@ -12374,10 +12946,10 @@ index 8d9ad0e4e54..afcc5bab878 100644
            // EWS looks like a special case here, but really it's just that
 diff --git a/mailnews/base/prefs/content/am-jmap.js b/mailnews/base/prefs/content/am-jmap.js
 new file mode 100644
-index 00000000000..2da13e610bb
+index 00000000000..f905e84f904
 --- /dev/null
 +++ b/mailnews/base/prefs/content/am-jmap.js
-@@ -0,0 +1,650 @@
+@@ -0,0 +1,674 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12658,7 +13230,11 @@ index 00000000000..2da13e610bb
 +    forgetCachedSignInValues();
 +    setStatus("jmapSignInStatus", doneId);
 +  } catch (e) {
-+    setErrorStatus("jmapSignInStatus", e);
++    if (e?.name == "AbortError") {
++      setStatus("jmapSignInStatus", "jmap-signin-cancelled");
++    } else {
++      setErrorStatus("jmapSignInStatus", e);
++    }
 +  } finally {
 +    gSignInBusy = false;
 +    updateSignInUI();
@@ -12688,10 +13264,27 @@ index 00000000000..2da13e610bb
 +  }
 +}
 +
-+function signIn() {
-+  return runSignInOperation("jmap-signin-progress", "jmap-signin-done", () =>
-+    getJmapOAuth().setupServer(gServer)
-+  );
++// Sign-in in the browser gives up after this long.
++const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
++let gSignInAbort = null;
++
++async function signIn() {
++  gSignInAbort = new AbortController();
++  const timer = setTimeout(() => gSignInAbort?.abort(), SIGN_IN_TIMEOUT_MS);
++  document.getElementById("jmapSignInCancelButton").hidden = false;
++  try {
++    await runSignInOperation("jmap-signin-progress", "jmap-signin-done", () =>
++      getJmapOAuth().setupServer(gServer, { signal: gSignInAbort.signal })
++    );
++  } finally {
++    clearTimeout(timer);
++    gSignInAbort = null;
++    document.getElementById("jmapSignInCancelButton").hidden = true;
++  }
++}
++
++function cancelSignIn() {
++  gSignInAbort?.abort();
 +}
 +
 +function signOut() {
@@ -13001,6 +13594,9 @@ index 00000000000..2da13e610bb
 +window.addEventListener("load", () => {
 +  document.getElementById("jmapSignInButton").addEventListener("click", signIn);
 +  document
++    .getElementById("jmapSignInCancelButton")
++    .addEventListener("click", cancelSignIn);
++  document
 +    .getElementById("jmapSignOutButton")
 +    .addEventListener("click", signOut);
 +  document
@@ -13030,10 +13626,10 @@ index 00000000000..2da13e610bb
 +});
 diff --git a/mailnews/base/prefs/content/am-jmap.xhtml b/mailnews/base/prefs/content/am-jmap.xhtml
 new file mode 100644
-index 00000000000..ebe1fd51b32
+index 00000000000..a77aca33475
 --- /dev/null
 +++ b/mailnews/base/prefs/content/am-jmap.xhtml
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,152 @@
 +<?xml version="1.0"?>
 +
 +<!-- This Source Code Form is subject to the terms of the Mozilla Public
@@ -13107,6 +13703,7 @@ index 00000000000..ebe1fd51b32
 +        <div class="row">
 +          <button id="jmapSignInButton" data-l10n-id="jmap-signin-button"></button>
 +          <button id="jmapSignOutButton" data-l10n-id="jmap-signout-button"></button>
++          <button id="jmapSignInCancelButton" data-l10n-id="jmap-signin-cancel-button" hidden="hidden"></button>
 +          <span id="jmapSignInStatus" class="status"></span>
 +        </div>
 +        <p id="jmapSignInUnavailable" class="hint" hidden="hidden" data-l10n-id="jmap-signin-unavailable"></p>
@@ -19261,10 +19858,10 @@ index 00000000000..335a9f2242f
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs b/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs
 new file mode 100644
-index 00000000000..6365d1ee419
+index 00000000000..035614050a6
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs
-@@ -0,0 +1,623 @@
+@@ -0,0 +1,669 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19286,9 +19883,12 @@ index 00000000000..6365d1ee419
 +const lazy = {};
 +ChromeUtils.defineESModuleGetters(lazy, {
 +  JmapAccountRegistry: "resource:///modules/jmap/JmapAccountRegistry.sys.mjs",
-+  JmapAuth: "resource:///modules/jmap/JmapAuth.sys.mjs",
 +  OAuth2Module: "resource:///modules/OAuth2Module.sys.mjs",
 +});
++// JmapAuth exports plain functions, so import the whole module namespace.
++ChromeUtils.defineLazyGetter(lazy, "JmapAuth", () =>
++  ChromeUtils.importESModule("resource:///modules/jmap/JmapAuth.sys.mjs")
++);
 +
 +const log = console.createInstance({
 +  prefix: "mail.jmap",
@@ -19467,6 +20067,22 @@ index 00000000000..6365d1ee419
 +
 +  setStringPref(name, value) {
 +    this.map.set(name, value);
++  }
++}
++
++/**
++ * Cancel a browser sign-in that is waiting for the redirect back.
++ *
++ * @param {nsIMsgIncomingServer} server
++ */
++function cancelPendingPrompt(server) {
++  try {
++    const module = new lazy.OAuth2Module();
++    if (module.initFromMail(server)) {
++      module.cancelPrompt();
++    }
++  } catch (e) {
++    log.warn("Could not cancel the pending OAuth2 sign-in", e);
 +  }
 +}
 +
@@ -19819,11 +20435,38 @@ index 00000000000..6365d1ee419
 +          }
 +        : null,
 +    });
++    const previousAuthMethod = server.authMethod;
 +    this.writeServerPrefs(server, this.prefValues(info, client));
 +    server.authMethod = Ci.nsMsgAuthMethod.OAuth2;
++    let onAbort = null;
 +    try {
-+      await lazy.JmapAuth.getAuthHeaders(server);
++      // The browser sign-in can stall forever (e.g. Stalwart shows an error
++      // page and never redirects back), so let the caller abort it.
++      const aborted = new Promise((resolve, reject) => {
++        if (!signal) {
++          return;
++        }
++        onAbort = () => {
++          cancelPendingPrompt(server);
++          reject(
++            signal.reason ?? new DOMException("Sign-in aborted", "AbortError")
++          );
++        };
++        if (signal.aborted) {
++          onAbort();
++        } else {
++          signal.addEventListener("abort", onAbort, { once: true });
++        }
++      });
++      await Promise.race([lazy.JmapAuth.getAuthHeaders(server), aborted]);
++    } catch (e) {
++      // Sign-in failed or was cancelled: keep the method the account had.
++      server.authMethod = previousAuthMethod;
++      throw e;
 +    } finally {
++      if (onAbort) {
++        signal.removeEventListener("abort", onAbort);
++      }
 +      lazy.JmapAccountRegistry.forget(server.key);
 +    }
 +    return info;
@@ -33450,6 +34093,186 @@ index 00000000000..b7df0b93383
 +  ]);
 +  Assert.deepEqual(await storedRefreshTokens(), ["refresh_token_2"]);
 +});
+diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_oauth_setup.js b/mailnews/protocols/jmap/test/unit/test_jmap_oauth_setup.js
+new file mode 100644
+index 00000000000..03057de0d4d
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/unit/test_jmap_oauth_setup.js
+@@ -0,0 +1,174 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Runs the Account Settings "Sign in" / "Sign out" paths,
++ * JmapOAuth.setupServer() and JmapOAuth.signOut(), end to end on a real JMAP
++ * incoming server. Nothing in JmapOAuth or JmapAuth is stubbed, so broken
++ * lazy imports inside those modules make this test fail.
++ */
++
++var { MailServices } = ChromeUtils.importESModule(
++  "resource:///modules/MailServices.sys.mjs"
++);
++var { JmapOAuth, REDIRECT_URI } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapOAuth.sys.mjs"
++);
++var { OAuth2TestUtils } = ChromeUtils.importESModule(
++  "resource://testing-common/mailnews/OAuth2TestUtils.sys.mjs"
++);
++
++do_get_profile();
++
++const ISSUER_HOST = "oauth.test.test";
++const ISSUER = `https://${ISSUER_HOST}`;
++const SESSION_URL = `${ISSUER}/jmap/session`;
++const USERNAME = "user@test.test";
++const SCOPES = "offline_access urn:ietf:params:oauth:scope:mail";
++
++let server;
++
++async function storedRefreshTokens() {
++  const logins = await Services.logins.searchLoginsAsync({
++    origin: `oauth://${ISSUER_HOST}`,
++  });
++  return logins.filter(l => l.username == USERNAME).map(l => l.password);
++}
++
++add_setup(async function () {
++  // The test OAuth2 server only knows this client ID.
++  Services.prefs.setStringPref("mail.jmap.oauth.client_id", "test_client_id");
++
++  const oAuth2Server = await OAuth2TestUtils.startServer({
++    username: "user",
++    password: "password",
++  });
++  const httpServer = oAuth2Server.httpServer;
++  httpServer.registerPathHandler("/jmap/session", (request, response) => {
++    response.setStatusLine("1.1", 401, "Unauthorized");
++    response.setHeader("Content-Type", "application/json", false);
++    response.write("{}");
++  });
++  httpServer.registerPathHandler(
++    "/.well-known/oauth-authorization-server",
++    (request, response) => {
++      response.setHeader("Content-Type", "application/json", false);
++      response.write(
++        JSON.stringify({
++          issuer: ISSUER,
++          authorization_endpoint: "/form",
++          token_endpoint: "/token",
++          response_types_supported: ["code"],
++          grant_types_supported: ["authorization_code", "refresh_token"],
++          code_challenge_methods_supported: ["S256"],
++        })
++      );
++    }
++  );
++
++  server = MailServices.accounts.createIncomingServer(
++    USERNAME,
++    ISSUER_HOST,
++    "jmap"
++  );
++  server.setStringValue("jmap_session_url", SESSION_URL);
++  server.authMethod = Ci.nsMsgAuthMethod.passwordCleartext;
++  // The test token endpoint also wants this secret; setupServer() reuses an
++  // existing client, as on a second sign-in.
++  server.setStringValue("oauth2.clientId", "test_client_id");
++  server.setStringValue("oauth2.clientSecret", "test_secret");
++
++  registerCleanupFunction(async () => {
++    await Services.logins.removeAllLoginsAsync();
++    OAuth2TestUtils.forgetObjects();
++    OAuth2TestUtils.stopServer();
++    MailServices.accounts.removeIncomingServer(server, false);
++    Services.prefs.clearUserPref("mail.jmap.oauth.client_id");
++  });
++});
++
++add_task(async function test_setup_server() {
++  const externalOAuthURL = OAuth2TestUtils.promiseExternalOAuthURL();
++  const setupPromise = JmapOAuth.setupServer(server);
++  const url = await externalOAuthURL;
++
++  const authURL = new URL(url);
++  const redirectURI = new URL(authURL.searchParams.get("redirect_uri"));
++  Assert.equal(redirectURI.hostname, "127.0.0.1", "loopback redirect host");
++  // OAuth2TestUtils.submitOAuthURL only accepts a "localhost" redirect host;
++  // the callback listener is on the loopback interface either way.
++  redirectURI.hostname = "localhost";
++  authURL.searchParams.set("redirect_uri", redirectURI.href);
++
++  await OAuth2TestUtils.submitOAuthURL(authURL.href, {
++    expectedHint: USERNAME,
++    expectedScope: SCOPES,
++    username: "user",
++    password: "password",
++  });
++  const info = await setupPromise;
++  Assert.equal(info.issuer, ISSUER, "the issuer is discovered");
++
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.OAuth2);
++  Assert.ok(server.getBoolValue("oauth2.useCustomDetails"));
++  Assert.equal(server.getStringValue("oauth2.clientId"), "test_client_id");
++  Assert.equal(server.getStringValue("oauth2.issuer"), ISSUER_HOST);
++  Assert.equal(server.getStringValue("oauth2.scopes"), SCOPES);
++  Assert.equal(
++    server.getStringValue("oauth2.redirectionEndpoint"),
++    REDIRECT_URI
++  );
++  Assert.equal(REDIRECT_URI, "http://127.0.0.1/");
++  Assert.equal(
++    server.getStringValue("oauth2.tokenEndpoint"),
++    `${ISSUER}/token`
++  );
++
++  Assert.deepEqual(
++    await storedRefreshTokens(),
++    ["refresh_token"],
++    "the refresh token is persisted"
++  );
++});
++
++add_task(async function test_sign_out() {
++  await JmapOAuth.signOut(server);
++
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.passwordCleartext);
++  Assert.deepEqual(
++    await storedRefreshTokens(),
++    [],
++    "the refresh token is removed"
++  );
++  Assert.equal(
++    server.getStringValue("oauth2.clientId"),
++    "test_client_id",
++    "the OAuth details are kept for a later sign-in"
++  );
++});
++
++add_task(async function test_cancelled_sign_in_keeps_password() {
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.passwordCleartext);
++  // Skip the 3 second cooldown between browser sign-ins.
++  OAuth2TestUtils.forgetObjects();
++  const controller = new AbortController();
++  const externalOAuthURL = OAuth2TestUtils.promiseExternalOAuthURL();
++  const setupPromise = JmapOAuth.setupServer(server, {
++    signal: controller.signal,
++  });
++  // The browser is open; the user never completes the sign-in.
++  await externalOAuthURL;
++  controller.abort();
++
++  await Assert.rejects(
++    setupPromise,
++    e => e.name == "AbortError",
++    "the sign-in is aborted"
++  );
++  Assert.equal(
++    server.authMethod,
++    Ci.nsMsgAuthMethod.passwordCleartext,
++    "a cancelled sign-in keeps password authentication"
++  );
++});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_offline_queue.js b/mailnews/protocols/jmap/test/unit/test_jmap_offline_queue.js
 new file mode 100644
 index 00000000000..230449bc457
@@ -34950,10 +35773,10 @@ index 00000000000..278fae568fe
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/xpcshell.toml b/mailnews/protocols/jmap/test/unit/xpcshell.toml
 new file mode 100644
-index 00000000000..5ded4604cee
+index 00000000000..6ed4cdfcd2c
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/xpcshell.toml
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,43 @@
 +[DEFAULT]
 +head = "head.js"
 +
@@ -34993,6 +35816,9 @@ index 00000000000..5ded4604cee
 +
 +["test_jmap_oauth_flow.js"]
 +prefs = ["mailnews.oauth.loglevel=Debug"]
++tags = ["oauth"]
++
++["test_jmap_oauth_setup.js"]
 +tags = ["oauth"]
 diff --git a/mailnews/protocols/moz.build b/mailnews/protocols/moz.build
 index aecad69daab..1d530d89098 100644
