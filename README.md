@@ -1,7 +1,34 @@
-# thunderbird-jmap
+# thunderbird-jmap: Thunderbird for Stalwart Mail Server (native JMAP client)
 
-An experimental build of Thunderbird (comm-central, 162.0a1 "Daily") that adds native
-[JMAP](https://jmap.io) support:
+**thunderbird-jmap** is a build of Mozilla Thunderbird with a native
+[JMAP](https://jmap.io) client, made for [Stalwart Mail Server](https://stalw.art).
+Mail, contacts, calendars and Stalwart's file storage all sync over one JMAP
+connection, with no IMAP, SMTP, CalDAV or CardDAV setup. It is an experimental
+build of comm-central 162.0a1 "Daily".
+
+## Stalwart compatibility
+
+Stalwart's JMAP features and how this build uses them:
+
+| Stalwart feature | JMAP capability | In Thunderbird |
+|---|---|---|
+| Email | `urn:ietf:params:jmap:mail` (RFC 8621) | Folders, read/flag/tag/move/copy/delete, undo, threads, server-side search, offline queue |
+| Sending | `urn:ietf:params:jmap:submission` | Send through `EmailSubmission`, Sent and Drafts filed on the server |
+| Push | JMAP EventSource (RFC 8620 §7.3) | New mail, contacts, events and files appear without polling |
+| Contacts | `urn:ietf:params:jmap:contacts` (RFC 9610) | Synced address books |
+| Calendars | `urn:ietf:params:jmap:calendars` | Calendar provider with events, alarms, invitations and free/busy |
+| File storage | `urn:ietf:params:jmap:filenode` | Files tab with previews, FileLink for large attachments, "Save to Files", "Attach from Files" |
+| Sieve filters | `urn:ietf:params:jmap:sieve` | Edit, validate and activate Sieve scripts in Account Settings |
+| Vacation replies | `urn:ietf:params:jmap:vacationresponse` | Out-of-office settings in Account Settings |
+| Quota | `urn:ietf:params:jmap:quota` | Storage use shown per folder |
+
+Rate limits (HTTP 429) and `maxConcurrentRequests` are respected, so it works
+against a production Stalwart server, not just a lenient test server.
+
+Not supported yet: signing in with Stalwart OAuth (SSO, TOTP), which is in
+progress; shared mailboxes from other accounts; JMAP over WebSocket.
+
+## Features
 
 - **Mail** (RFC 8620/8621): folder sync, read/flag/tag/move/copy/delete, undo,
   Drafts and Sent, sending through `EmailSubmission`, server-side search, quota,
@@ -10,11 +37,12 @@ An experimental build of Thunderbird (comm-central, 162.0a1 "Daily") that adds n
 - **Calendars** (JMAP Calendars draft) as a calendar provider, with free/busy.
 - **Files** (Stalwart `urn:ietf:params:jmap:filenode`): a FileLink provider, a Files tab,
   "Save to Files" for attachments and "Attach from Files" in compose.
-- **Account setup**: the account wizard probes `/.well-known/jmap` and prefers JMAP
-  when the server offers it. Vacation response, Sieve scripts and push settings live in
-  Account Settings.
+- **Account setup**: enter your email address and the account wizard finds
+  Stalwart through `/.well-known/jmap`, preferring JMAP when the server offers
+  it. Vacation response, Sieve scripts and push settings live in Account Settings.
 
-It is developed and tested against [Stalwart](https://stalw.art).
+It is developed and tested against Stalwart 1.0. Other JMAP servers (for
+example Fastmail or Cyrus) should work for mail, but are not tested.
 
 > This is an unofficial build, not a Mozilla product. It uses the unbranded
 > "Daily" branding. Expect bugs; keep backups of your profile.
