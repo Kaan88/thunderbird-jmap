@@ -140,10 +140,10 @@ index 5e4b5044e16..1b706dc3f3a 100644
 +jmap-calendar-provider-name = JMAP Calendar
 diff --git a/calendar/providers/jmap/CalJmapCalendar.sys.mjs b/calendar/providers/jmap/CalJmapCalendar.sys.mjs
 new file mode 100644
-index 00000000000..b25366077d0
+index 00000000000..2ffb08212b2
 --- /dev/null
 +++ b/calendar/providers/jmap/CalJmapCalendar.sys.mjs
-@@ -0,0 +1,628 @@
+@@ -0,0 +1,646 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -428,7 +428,7 @@ index 00000000000..b25366077d0
 +    // Full sync. Read the state first so changes made during the sync are
 +    // picked up next time.
 +    const { state } = await events.get([], { properties: ["id"] });
-+    const { ids } = await events.queryAll({ inCalendars: [calendarId] });
++    const { ids } = await this.#queryCalendarEventIds(events, calendarId);
 +    const { list } = ids.length ? await events.get(ids) : { list: [] };
 +    const seen = new Set();
 +    this.startBatch();
@@ -452,6 +452,24 @@ index 00000000000..b25366077d0
 +      this.endBatch();
 +    }
 +    this.#setState(state);
++  }
++
++  /**
++   * Ids of all events in a calendar. The JMAP Calendars draft filters with
++   * `inCalendar` (one id); early drafts used `inCalendars` (a list), which
++   * current Stalwart rejects with `unsupportedFilter`. Try the current name
++   * first and fall back to the old one.
++   */
++  async #queryCalendarEventIds(events, calendarId) {
++    try {
++      return await events.queryAll({ inCalendar: calendarId });
++    } catch (error) {
++      if (!/unsupportedFilter|invalidArguments/.test(error?.type ?? error?.message ?? "")) {
++        throw error;
++      }
++      lazy.log.info(`inCalendar filter not supported, retrying with inCalendars: ${error.message}`);
++      return events.queryAll({ inCalendars: [calendarId] });
++    }
 +  }
 +
 +  async #storeEvent(js) {
@@ -2382,6 +2400,117 @@ index fa2f25af4c9..cf92a9bd9fc 100644
 +function SaveAttachmentsToJmapFiles(attachments) {
 +  lazyJmapFilesUI().saveAttachments(top, attachments);
 +}
+diff --git a/mail/base/content/spacesToolbar.inc.xhtml b/mail/base/content/spacesToolbar.inc.xhtml
+index e79a6cf5460..a99f9ad56d2 100644
+--- a/mail/base/content/spacesToolbar.inc.xhtml
++++ b/mail/base/content/spacesToolbar.inc.xhtml
+@@ -80,6 +80,13 @@
+             tabindex="-1">
+       <img src="" alt="" />
+     </button>
++    <button id="jmapFilesButton"
++            data-l10n-id="spaces-toolbar-button-jmap-files"
++            class="spaces-toolbar-button"
++            tabindex="-1"
++            hidden="hidden">
++      <img src="" alt="" />
++    </button>
+     <button id="chatButton"
+             data-l10n-id="spaces-toolbar-button-chat2"
+             class="spaces-toolbar-button"
+diff --git a/mail/base/content/spacesToolbar.js b/mail/base/content/spacesToolbar.js
+index 7bc65b76146..0e99211f5d6 100644
+--- a/mail/base/content/spacesToolbar.js
++++ b/mail/base/content/spacesToolbar.js
+@@ -266,6 +266,17 @@ var gSpacesToolbar = {
+           return openTab("tasks", {}, where);
+         },
+       },
++      {
++        name: "jmapFiles",
++        button: document.getElementById("jmapFilesButton"),
++        menuitem: document.getElementById("spacesPopupButtonJmapFiles"),
++        tabInSpace(tabInfo) {
++          return tabInfo.mode.name == "jmapFiles" ? 1 : 0;
++        },
++        open(where) {
++          return openTab("jmapFiles", {}, where);
++        },
++      },
+       {
+         name: "chat",
+         button: document.getElementById("chatButton"),
+@@ -368,6 +379,8 @@ var gSpacesToolbar = {
+       .getElementById("settingsContextOpenCustomizeItem")
+       .addEventListener("command", () => this.showCustomize());
+ 
++    this._initJmapFilesButton();
++
+     for (const space of this.spaces) {
+       this._addButtonClickListener(space.button, () => {
+         this.openSpace(tabmail, space);
+@@ -547,6 +560,45 @@ var gSpacesToolbar = {
+     }
+   },
+ 
++  /**
++   * Show the Files space only while a JMAP account exists, since only JMAP
++   * servers (Stalwart file storage) provide files.
++   */
++  _initJmapFilesButton() {
++    const space = this.spaces.find(s => s.name == "jmapFiles");
++    if (!space) {
++      return;
++    }
++    const update = removedServer => {
++      let show = false;
++      try {
++        // A server being unloaded may still be listed in allServers.
++        show = MailServices.accounts.allServers.some(
++          s => s.type == "jmap" && s != removedServer
++        );
++      } catch (e) {
++        console.error(e);
++      }
++      space.button.hidden = !show;
++      if (space.menuitem) {
++        space.menuitem.hidden = !show;
++      }
++    };
++    update(null);
++    const listener = {
++      QueryInterface: ChromeUtils.generateQI(["nsIIncomingServerListener"]),
++      onServerLoaded: () => update(null),
++      onServerUnloaded: server => update(server),
++      onServerChanged() {},
++    };
++    MailServices.accounts.addIncomingServerListener(listener);
++    window.addEventListener(
++      "unload",
++      () => MailServices.accounts.removeIncomingServerListener(listener),
++      { once: true }
++    );
++  },
++
+   /**
+    * Add a click event listener to a spaces toolbar button.
+    *
+diff --git a/mail/base/content/spacesToolbarPin.inc.xhtml b/mail/base/content/spacesToolbarPin.inc.xhtml
+index 5444c5fc89a..aa2b7ec8dae 100644
+--- a/mail/base/content/spacesToolbarPin.inc.xhtml
++++ b/mail/base/content/spacesToolbarPin.inc.xhtml
+@@ -26,6 +26,11 @@
+               data-l10n-id="spaces-pinned-button-menuitem-tasks2"
+               data-l10n-attrs="acceltext"
+               class="menuitem-iconic spaces-popup-menuitem"/>
++    <menuitem id="spacesPopupButtonJmapFiles"
++              data-l10n-id="spaces-pinned-button-menuitem-jmap-files"
++              data-l10n-attrs="acceltext"
++              class="menuitem-iconic spaces-popup-menuitem"
++              hidden="hidden"/>
+     <menuitem id="spacesPopupButtonChat"
+               data-l10n-id="spaces-pinned-button-menuitem-chat2"
+               data-l10n-attrs="acceltext"
 diff --git a/mail/components/accountcreation/content/widgets/email-added-success.mjs b/mail/components/accountcreation/content/widgets/email-added-success.mjs
 index e6c3c7b45c3..2ca0676d3f2 100644
 --- a/mail/components/accountcreation/content/widgets/email-added-success.mjs
@@ -7194,6 +7323,23 @@ index 00000000000..f61f51999b1
 +# $limit (Number) - Maximum depth.
 +jmap-files-error-depth = Folders cannot be nested more than { $limit } levels deep.
 +jmap-files-error-cycle = A folder cannot be moved into itself.
+diff --git a/mail/locales/en-US/messenger/messenger.ftl b/mail/locales/en-US/messenger/messenger.ftl
+index f7aeb45bffe..4c5d77b26dc 100644
+--- a/mail/locales/en-US/messenger/messenger.ftl
++++ b/mail/locales/en-US/messenger/messenger.ftl
+@@ -642,6 +642,12 @@ spaces-pinned-button-menuitem-calendar2 =
+ spaces-pinned-button-menuitem-tasks2 =
+     .label = { spaces-toolbar-button-tasks2.title }
+ 
++spaces-toolbar-button-jmap-files =
++    .title = Files
++
++spaces-pinned-button-menuitem-jmap-files =
++    .label = { spaces-toolbar-button-jmap-files.title }
++
+ spaces-pinned-button-menuitem-chat2 =
+     .label = { spaces-toolbar-button-chat2.title }
+ 
 diff --git a/mail/locales/en-US/messenger/preferences/am-jmap.ftl b/mail/locales/en-US/messenger/preferences/am-jmap.ftl
 new file mode 100644
 index 00000000000..f39ab0785a1
@@ -7245,6 +7391,32 @@ index 00000000000..f39ab0785a1
 +# Variables:
 +#   $message (String) - Error details.
 +jmap-error = Error: { $message }
+diff --git a/mail/themes/shared/mail/spacesToolbar.css b/mail/themes/shared/mail/spacesToolbar.css
+index a605aefbf04..4c195ede299 100644
+--- a/mail/themes/shared/mail/spacesToolbar.css
++++ b/mail/themes/shared/mail/spacesToolbar.css
+@@ -259,6 +259,10 @@ img {
+     content: var(--spaces-icon-chat);
+   }
+ 
++  #jmapFilesButton & {
++    content: url("chrome://messenger/skin/icons/new/normal/folder.svg");
++  }
++
+   #settingsButton & {
+     content: var(--spaces-icon-settings);
+   }
+@@ -297,6 +301,10 @@ img {
+   --menuitem-icon: var(--icon-chat);
+ }
+ 
++#spacesPopupButtonJmapFiles {
++  --menuitem-icon: url("chrome://messenger/skin/icons/new/compact/folder.svg");
++}
++
+ #spacesPopupButtonSettings {
+   --menuitem-icon: var(--icon-settings);
+ }
 diff --git a/mailnews/addrbook/modules/AddrBookManager.sys.mjs b/mailnews/addrbook/modules/AddrBookManager.sys.mjs
 index 918ac384a29..cc4ca28d418 100644
 --- a/mailnews/addrbook/modules/AddrBookManager.sys.mjs
@@ -10280,10 +10452,10 @@ index 00000000000..b0890974e80
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapClient.sys.mjs
 new file mode 100644
-index 00000000000..02025c92c5d
+index 00000000000..499664bb9d9
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapClient.sys.mjs
-@@ -0,0 +1,751 @@
+@@ -0,0 +1,771 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10297,6 +10469,7 @@ index 00000000000..02025c92c5d
 +  JmapCapabilityError,
 +  JmapError,
 +  JmapMethodError,
++  JmapNetworkError,
 +  JmapRequestError,
 +  JmapSessionError,
 +} from "resource:///modules/jmap/JmapErrors.sys.mjs";
@@ -10780,8 +10953,9 @@ index 00000000000..02025c92c5d
 +      );
 +    }
 +
-+    const { body: responseBody } = await this.#withSlot(() =>
-+      this.#transport.request(this.apiUrl, {
++    const { body: responseBody } = await this.#transport.request(
++      this.apiUrl,
++      {
 +        method: "POST",
 +        headers: {
 +          Accept: "application/json",
@@ -10790,7 +10964,8 @@ index 00000000000..02025c92c5d
 +        body,
 +        signal,
 +        retry: false,
-+      })
++        slot: this.#slot,
++      }
 +    );
 +
 +    if (
@@ -10888,16 +11063,15 @@ index 00000000000..02025c92c5d
 +    }
 +
 +    const url = expandUrlTemplate(this.uploadUrl, { accountId });
-+    const { body } = await this.#withSlot(() =>
-+      this.#transport.request(url, {
-+        method: "POST",
-+        headers: { "Content-Type": contentType },
-+        body: data,
-+        signal,
-+        retry: false,
-+        timeout: TRANSFER_TIMEOUT_MS,
-+      })
-+    );
++    const { body } = await this.#transport.request(url, {
++      method: "POST",
++      headers: { "Content-Type": contentType },
++      body: data,
++      signal,
++      retry: false,
++      slot: this.#slot,
++      timeout: TRANSFER_TIMEOUT_MS,
++    });
 +
 +    if (!body || typeof body.blobId != "string") {
 +      throw new JmapRequestError("Malformed blob upload response", {
@@ -10982,26 +11156,44 @@ index 00000000000..02025c92c5d
 +  }
 +
 +  /**
-+   * Run a function while holding one of the server's request slots.
-+   *
-+   * @param {Function} task
-+   * @returns {Promise<*>}
++   * Concurrency slot hooks handed to the transport, which holds a slot only
++   * while a request is actually on the wire (not while it waits out a rate
++   * limit).
 +   */
-+  async #withSlot(task) {
-+    await this.#acquireSlot();
-+    try {
-+      return await task();
-+    } finally {
-+      this.#releaseSlot();
-+    }
-+  }
++  #slot = {
++    acquire: signal => this.#acquireSlot(signal),
++    release: () => this.#releaseSlot(),
++  };
 +
-+  async #acquireSlot() {
++  /**
++   * @param {AbortSignal} [signal] - Gives up waiting for a slot when aborted.
++   */
++  async #acquireSlot(signal) {
++    const aborted = () =>
++      new JmapNetworkError("JMAP request was aborted", { aborted: true });
++    if (signal?.aborted) {
++      throw aborted();
++    }
 +    if (this.#activeRequests < this.maxConcurrentRequests) {
 +      this.#activeRequests++;
 +      return;
 +    }
-+    await new Promise(resolve => this.#waiters.push(resolve));
++    await new Promise((resolve, reject) => {
++      const onAbort = () => {
++        const index = this.#waiters.indexOf(waiter);
++        if (index != -1) {
++          this.#waiters.splice(index, 1);
++        }
++        reject(aborted());
++      };
++      // Called by #releaseSlot, which hands its slot over to this waiter.
++      const waiter = () => {
++        signal?.removeEventListener("abort", onAbort);
++        resolve();
++      };
++      this.#waiters.push(waiter);
++      signal?.addEventListener("abort", onAbort, { once: true });
++    });
 +  }
 +
 +  #releaseSlot() {
@@ -11944,10 +12136,10 @@ index 00000000000..3bf8d46adbe
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapMailClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapMailClient.sys.mjs
 new file mode 100644
-index 00000000000..3033e62db6f
+index 00000000000..131f6a76055
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapMailClient.sys.mjs
-@@ -0,0 +1,986 @@
+@@ -0,0 +1,1028 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12083,8 +12275,12 @@ index 00000000000..3033e62db6f
 + * returns the `args` part of the corresponding method response, and throws
 + * `JmapMethodError` when the server rejects the call.
 + */
++/** Upper bound on remembered email blob ids (see `cachedBlobId`). */
++const MAX_CACHED_BLOB_IDS = 200000;
++
 +export class JmapMailClient {
 +  #client;
++  #blobIds = new Map();
 +
 +  /**
 +   * @param {import("resource:///modules/jmap/JmapClient.sys.mjs").JmapClient} client
@@ -12356,7 +12552,7 @@ index 00000000000..3033e62db6f
 +    maxBodyValueBytes,
 +    accountId,
 +  } = {}) {
-+    return this.#call("Email/get", defined({
++    const result = await this.#call("Email/get", defined({
 +      accountId: this.mailAccountId(accountId),
 +      ids,
 +      properties,
@@ -12366,6 +12562,41 @@ index 00000000000..3033e62db6f
 +      fetchAllBodyValues,
 +      maxBodyValueBytes,
 +    }));
++    if (!accountId || accountId == this.mailAccountId()) {
++      this.#rememberBlobIds(result?.list);
++    }
++    return result;
++  }
++
++  /**
++   * The raw message blob id of an email seen by an earlier `Email/get`, if
++   * any. An email's content never changes, so neither does its blob id; the
++   * cache saves one request per message when downloading message bodies.
++   *
++   * @param {string} id
++   * @returns {?string}
++   */
++  cachedBlobId(id) {
++    return this.#blobIds.get(id) ?? null;
++  }
++
++  #rememberBlobIds(list) {
++    for (const email of list ?? []) {
++      if (typeof email?.id == "string" && typeof email.blobId == "string") {
++        this.#blobIds.set(email.id, email.blobId);
++      }
++    }
++    // Bound memory use: drop the oldest entries.
++    if (this.#blobIds.size > MAX_CACHED_BLOB_IDS) {
++      const excess = this.#blobIds.size - MAX_CACHED_BLOB_IDS;
++      let n = 0;
++      for (const key of this.#blobIds.keys()) {
++        if (n++ >= excess) {
++          break;
++        }
++        this.#blobIds.delete(key);
++      }
++    }
 +  }
 +
 +  /**
@@ -12602,6 +12833,9 @@ index 00000000000..3033e62db6f
 +      },
 +    ]);
 +
++    if (resolvedAccountId == this.mailAccountId()) {
++      this.#rememberBlobIds(responses[1].args.list);
++    }
 +    return {
 +      query: responses[0].args,
 +      emails: responses[1].args.list ?? [],
@@ -16457,10 +16691,10 @@ index 00000000000..6341db2776b
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapTransport.sys.mjs b/mailnews/protocols/jmap/modules/JmapTransport.sys.mjs
 new file mode 100644
-index 00000000000..f5f6f48a60a
+index 00000000000..f5bc81b9a0b
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapTransport.sys.mjs
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,622 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16473,6 +16707,53 @@ index 00000000000..f5f6f48a60a
 +  JmapRateLimitError,
 +} from "resource:///modules/jmap/JmapErrors.sys.mjs";
 +import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
++
++/** Default client-side request rate, in requests per second (0 = no limit). */
++const DEFAULT_REQUESTS_PER_SECOND = 10;
++
++/** Requests that may be sent back to back before pacing starts. */
++const DEFAULT_BURST = 20;
++
++/** Longest pause after a 429, whatever the server asks for. */
++const RATE_LIMIT_MAX_PAUSE_MS = 60000;
++
++/** How often a rate-limited (429) request is retried. */
++const DEFAULT_RATE_LIMIT_RETRIES = 6;
++
++/**
++ * Per-origin pacing state, shared by every transport talking to the same
++ * server: mail, contacts, calendars and files each have their own client, but
++ * the server counts all of their requests against one account limit.
++ *
++ * @type {Map<string, {pausedUntil: number, tat: number}>}
++ */
++const originGates = new Map();
++
++function gateFor(url) {
++  let origin;
++  try {
++    origin = new URL(url).origin;
++  } catch {
++    origin = String(url);
++  }
++  let gate = originGates.get(origin);
++  if (!gate) {
++    gate = { pausedUntil: 0, tat: 0 };
++    originGates.set(origin, gate);
++  }
++  return gate;
++}
++
++function defaultRequestsPerSecond() {
++  try {
++    return Services.prefs.getIntPref(
++      "mail.jmap.max_requests_per_second",
++      DEFAULT_REQUESTS_PER_SECOND
++    );
++  } catch {
++    return DEFAULT_REQUESTS_PER_SECOND;
++  }
++}
 +
 +/** Maximum delay we are willing to honour from a `Retry-After` header. */
 +const MAX_RETRY_AFTER_MS = 120000;
@@ -16509,6 +16790,9 @@ index 00000000000..f5f6f48a60a
 +    getAuthHeaders = null,
 +    timeout = 30000,
 +    maxRetries = 2,
++    rateLimitRetries = DEFAULT_RATE_LIMIT_RETRIES,
++    requestsPerSecond = defaultRequestsPerSecond(),
++    burst = DEFAULT_BURST,
 +    retryDelay = null,
 +    logger = null,
 +  } = {}) {
@@ -16523,6 +16807,9 @@ index 00000000000..f5f6f48a60a
 +    this.getAuthHeaders = getAuthHeaders;
 +    this.timeout = timeout;
 +    this.maxRetries = maxRetries;
++    this.rateLimitRetries = rateLimitRetries;
++    this.requestsPerSecond = requestsPerSecond;
++    this.burst = Math.max(1, burst);
 +    this.retryDelay = retryDelay ?? defaultRetryDelay;
 +    this.logger = logger;
 +  }
@@ -16558,6 +16845,8 @@ index 00000000000..f5f6f48a60a
 +      signal,
 +      responseType = "json",
 +      retry,
++      rateLimitRetry = true,
++      slot = null,
 +      timeout,
 +    } = {}
 +  ) {
@@ -16570,12 +16859,35 @@ index 00000000000..f5f6f48a60a
 +        ? retry
 +        : method === "GET" || method === "HEAD";
 +    // A ReadableStream body cannot be replayed, so retrying is unsafe.
-+    const attempts =
-+      canRetry && !isStreamBody(body) ? Math.max(0, this.maxRetries) + 1 : 1;
++    const replayable = !isStreamBody(body);
++    const attempts = canRetry && replayable ? Math.max(0, this.maxRetries) + 1 : 1;
++    // A 429 means the server did not process the request, so even a POST
++    // sent with `retry: false` can be sent again. Rate limits last longer
++    // than other transient errors, so they get their own budget; callers opt
++    // out with `rateLimitRetry: false`.
++    const rateLimitAttempts =
++      replayable && rateLimitRetry ? Math.max(0, this.rateLimitRetries) + 1 : 1;
++    const gate = gateFor(url);
 +
-+    for (let attempt = 0; ; attempt++) {
++    let rateLimited = 0;
++    let other = 0;
++    for (;;) {
++      await this.#waitForTurn(gate, signal);
++      // Take the caller's concurrency slot only once the request may go out,
++      // and give it back before any retry wait, so that a paused request does
++      // not block other requests to the server.
++      await slot?.acquire(signal);
++      // Waiting for the slot takes time: re-check the abort signal, any
++      // rate-limit pause and the request rate, and only then use up a token.
++      if (signal?.aborted || !this.#takeToken(gate)) {
++        slot?.release();
++        throwIfAborted(signal);
++        continue;
++      }
++      let result;
++      let failure = null;
 +      try {
-+        return await this.#requestOnce(url, {
++        result = await this.#requestOnce(url, {
 +          method,
 +          headers,
 +          body,
@@ -16584,24 +16896,101 @@ index 00000000000..f5f6f48a60a
 +          timeout: timeout ?? this.timeout,
 +        });
 +      } catch (error) {
-+        const isLastAttempt = attempt + 1 >= attempts;
-+        if (
-+          isLastAttempt ||
-+          !(error instanceof JmapError) ||
-+          !this.#shouldRetry(error)
-+        ) {
-+          throw error;
-+        }
++        failure = error;
++      } finally {
++        slot?.release();
++      }
++      if (!failure) {
++        return result;
++      }
 +
-+        const delay = this.retryDelay(error, attempt);
++      const error = failure;
++      const isRateLimit = error instanceof JmapRateLimitError;
++      const attempt = isRateLimit ? rateLimited++ : other++;
++      const isLastAttempt =
++        attempt + 1 >= (isRateLimit ? rateLimitAttempts : attempts);
++      if (
++        isLastAttempt ||
++        !(error instanceof JmapError) ||
++        !this.#shouldRetry(error)
++      ) {
++        throw error;
++      }
++
++      const delay = this.retryDelay(error, attempt);
++      if (isRateLimit) {
++        // Hold back every request to this server, not just this one.
++        gate.pausedUntil = Math.max(gate.pausedUntil, Date.now() + delay);
++        this.logger?.warn?.(
++          `JMAP server ${new URL(url).host} is rate limiting requests; pausing for ${delay}ms`
++        );
++      } else {
 +        this.logger?.debug?.(
 +          `Retrying JMAP request to ${url} in ${delay}ms (attempt ${
 +            attempt + 2
 +          }/${attempts})`
 +        );
-+        await sleep(delay);
++        await sleep(delay, signal);
 +      }
 +    }
++  }
++
++  /**
++   * Wait until this server may probably be sent another request: after any
++   * pause caused by a 429, and within the client-side request rate. Nothing is
++   * reserved here; {@link #takeToken} does that right before sending.
++   *
++   * @param {{pausedUntil: number, tat: number}} gate
++   * @param {AbortSignal} [signal]
++   */
++  async #waitForTurn(gate, signal) {
++    for (;;) {
++      throwIfAborted(signal);
++      const wait = this.#delayFor(gate);
++      if (wait <= 0) {
++        return;
++      }
++      await sleep(wait, signal);
++    }
++  }
++
++  /**
++   * How long a request to this server has to wait right now.
++   *
++   * @param {{pausedUntil: number, tat: number}} gate
++   * @returns {number} Milliseconds; 0 or less means it may go now.
++   */
++  #delayFor(gate) {
++    const now = Date.now();
++    const pause = gate.pausedUntil - now;
++    if (pause > 0) {
++      return pause;
++    }
++    if (!(this.requestsPerSecond > 0)) {
++      return 0;
++    }
++    // Generic cell rate algorithm: `tat` is the theoretical arrival time of
++    // the next request; up to `burst` requests may go out back to back.
++    const interval = 1000 / this.requestsPerSecond;
++    return Math.max(gate.tat, now - (this.burst - 1) * interval) - now;
++  }
++
++  /**
++   * Reserve a request token if the request may go out now.
++   *
++   * @param {{pausedUntil: number, tat: number}} gate
++   * @returns {boolean} False when the request has to wait again.
++   */
++  #takeToken(gate) {
++    if (this.#delayFor(gate) > 0) {
++      return false;
++    }
++    if (this.requestsPerSecond > 0) {
++      const now = Date.now();
++      const interval = 1000 / this.requestsPerSecond;
++      gate.tat = Math.max(gate.tat, now - (this.burst - 1) * interval) + interval;
++    }
++    return true;
 +  }
 +
 +  /**
@@ -16729,6 +17118,15 @@ index 00000000000..f5f6f48a60a
 + * @returns {number} Delay in milliseconds.
 + */
 +function defaultRetryDelay(error, attempt) {
++  if (error instanceof JmapRateLimitError) {
++    // Rate limit windows are usually a minute long. Back off at least
++    // exponentially, even when the server asks for less (`Retry-After: 0`),
++    // and never pause longer than a minute so that a request (and the
++    // message display waiting on it) does not hang for many minutes.
++    const backoff = Math.min(2 ** attempt * 2000, RATE_LIMIT_MAX_PAUSE_MS);
++    const requested = Math.min(error.retryAfter ?? 0, RATE_LIMIT_MAX_PAUSE_MS);
++    return Math.max(backoff, requested) + Math.floor(Math.random() * 1000);
++  }
 +  if (error.retryAfter != null) {
 +    return Math.min(error.retryAfter, MAX_RETRY_AFTER_MS);
 +  }
@@ -16892,8 +17290,32 @@ index 00000000000..f5f6f48a60a
 + * @param {number} ms
 + * @returns {Promise<void>}
 + */
-+function sleep(ms) {
-+  return new Promise(resolve => setTimeout(resolve, ms));
++function sleep(ms, signal) {
++  return new Promise((resolve, reject) => {
++    if (signal?.aborted) {
++      reject(new JmapNetworkError("JMAP request was aborted", { aborted: true }));
++      return;
++    }
++    const onAbort = () => {
++      clearTimeout(timer);
++      reject(new JmapNetworkError("JMAP request was aborted", { aborted: true }));
++    };
++    const timer = setTimeout(() => {
++      signal?.removeEventListener("abort", onAbort);
++      resolve();
++    }, ms);
++    signal?.addEventListener("abort", onAbort, { once: true });
++  });
++}
++
++/**
++ * @param {AbortSignal} [signal]
++ * @throws {JmapNetworkError} If the signal has been aborted.
++ */
++function throwIfAborted(signal) {
++  if (signal?.aborted) {
++    throw new JmapNetworkError("JMAP request was aborted", { aborted: true });
++  }
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapTypeClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapTypeClient.sys.mjs
 new file mode 100644
@@ -17163,10 +17585,10 @@ index 00000000000..8eca2df451e
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapXPCOMClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapXPCOMClient.sys.mjs
 new file mode 100644
-index 00000000000..aef49ea36c8
+index 00000000000..48b3c23276d
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapXPCOMClient.sys.mjs
-@@ -0,0 +1,761 @@
+@@ -0,0 +1,762 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17431,9 +17853,10 @@ index 00000000000..aef49ea36c8
 +  async #getMessage(listener, id) {
 +    try {
 +      const mail = await this.#getMailClient();
-+      const email = await mail.getEmail(id, {
-+        properties: ["id", "blobId"],
-+      });
++      const cachedBlobId = mail.cachedBlobId(id);
++      const email = cachedBlobId
++        ? { id, blobId: cachedBlobId }
++        : await mail.getEmail(id, { properties: ["id", "blobId"] });
 +
 +      if (!email) {
 +        throw new JmapError(`JMAP message ${id} was not found`);
@@ -25030,13 +25453,16 @@ index 00000000000..20180627b07
 +]
 diff --git a/mailnews/protocols/jmap/test/unit/head.js b/mailnews/protocols/jmap/test/unit/head.js
 new file mode 100644
-index 00000000000..c04050cc890
+index 00000000000..abf5de72e23
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/head.js
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,287 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// Tests talk to fake servers; client-side request pacing would only slow them.
++Services.prefs.setIntPref("mail.jmap.max_requests_per_second", 0);
 +
 +var { JmapClient, byteLength, expandUrlTemplate, getWellKnownSessionUrl } =
 +  ChromeUtils.importESModule("resource:///modules/jmap/JmapClient.sys.mjs");
@@ -25154,8 +25580,14 @@ index 00000000000..c04050cc890
 +  }
 +
 +  async request(url, options = {}) {
-+    this.requests.push({ url, ...options });
-+    return this.handler(url, options);
++    // Honour the client's concurrency slot hooks like JmapTransport does.
++    await options.slot?.acquire(options.signal);
++    try {
++      this.requests.push({ url, ...options });
++      return await this.handler(url, options);
++    } finally {
++      options.slot?.release();
++    }
 +  }
 +}
 +
