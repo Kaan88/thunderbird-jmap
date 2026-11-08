@@ -2270,10 +2270,28 @@ index 4ccb5c32ed4..94f82278109 100644
      "storage",
  ]
 diff --git a/mail/app/profile/all-thunderbird.js b/mail/app/profile/all-thunderbird.js
-index 5664a12a4e1..c7d4345400d 100644
+index 5664a12a4e1..051084edb31 100644
 --- a/mail/app/profile/all-thunderbird.js
 +++ b/mail/app/profile/all-thunderbird.js
-@@ -1636,3 +1636,8 @@ pref("widget.macos.native-anchored-menus", false);
+@@ -502,6 +502,7 @@ pref("network.protocol-handler.expose.mailbox", true);
+ // clickable links with this scheme.
+ pref("network.protocol-handler.expose.x-moz-ews", false);
+ pref("network.protocol-handler.expose.x-moz-graph", false);
++pref("network.protocol-handler.expose.x-moz-jmap", false);
+ // Although we allow these to be exposed internally, there are various places
+ // (e.g. message pane) where we may divert them out to external applications.
+ pref("network.protocol-handler.expose.about", true);
+@@ -546,6 +547,9 @@ pref("network.protocol-handler.external.ews-message", false);
+ pref("network.protocol-handler.external.graph-message", false);
+ pref("network.protocol-handler.external.x-moz-ews", false);
+ pref("network.protocol-handler.external.x-moz-graph", false);
++pref("network.protocol-handler.external.jmap", false);
++pref("network.protocol-handler.external.jmap-message", false);
++pref("network.protocol-handler.external.x-moz-jmap", false);
+ 
+ pref("network.hosts.smtp_server",           "mail");
+ pref("network.hosts.pop_server",            "mail");
+@@ -1636,3 +1640,8 @@ pref("widget.macos.native-anchored-menus", false);
  
  // The color used to style primary buttons and elements.
  pref("mail.appearance.accentColor", "accent-color");
@@ -2511,6 +2529,19 @@ index 5444c5fc89a..aa2b7ec8dae 100644
      <menuitem id="spacesPopupButtonChat"
                data-l10n-id="spaces-pinned-button-menuitem-chat2"
                data-l10n-attrs="acceltext"
+diff --git a/mail/components/MessengerContentHandler.sys.mjs b/mail/components/MessengerContentHandler.sys.mjs
+index 9d635a867e8..f0ac398f6a4 100644
+--- a/mail/components/MessengerContentHandler.sys.mjs
++++ b/mail/components/MessengerContentHandler.sys.mjs
+@@ -562,7 +562,7 @@ export class MessengerContentHandler {
+           lazy.MailUtils.openMidUri(uri);
+         });
+       } else if (
+-        ["mailbox-message:", "imap-message:", "news-message:"].includes(
++        ["mailbox-message:", "imap-message:", "news-message:", "jmap-message:"].includes(
+           url?.protocol
+         )
+       ) {
 diff --git a/mail/components/accountcreation/content/widgets/email-added-success.mjs b/mail/components/accountcreation/content/widgets/email-added-success.mjs
 index e6c3c7b45c3..2ca0676d3f2 100644
 --- a/mail/components/accountcreation/content/widgets/email-added-success.mjs
@@ -3998,7 +4029,7 @@ index 83f6ae997e1..985295a3db9 100644
 +  console.error(e);
 +}
 diff --git a/mail/components/compose/content/MsgComposeCommands.js b/mail/components/compose/content/MsgComposeCommands.js
-index 4e2c350b94f..f6766b494ae 100644
+index 4e2c350b94f..5aca16cf33c 100644
 --- a/mail/components/compose/content/MsgComposeCommands.js
 +++ b/mail/components/compose/content/MsgComposeCommands.js
 @@ -2211,6 +2211,12 @@ function updateOptionItems() {
@@ -4034,6 +4065,42 @@ index 4e2c350b94f..f6766b494ae 100644
  /**
   * Convert an nsIFile instance into an nsIMsgAttachment.
   *
+@@ -8341,7 +8360,7 @@ async function AddAttachments(aAttachments, aContentChanged = true) {
+     // or hostname.
+     // Don't allow file or mail/news protocol uris to leak out either.
+     if (
+-      /^mailbox-message:|^imap-message:|^news-message:/i.test(attachment.name)
++      /^mailbox-message:|^imap-message:|^news-message:|^jmap-message:/i.test(attachment.name)
+     ) {
+       attachment.name = await document.l10n.formatValue(
+         "compose-message-attachment-name"
+@@ -8360,7 +8379,7 @@ async function AddAttachments(aAttachments, aContentChanged = true) {
+ 
+     // Create temporary files for message attachments.
+     if (
+-      /^mailbox-message:|^imap-message:|^news-message:/i.test(attachment.url)
++      /^mailbox-message:|^imap-message:|^news-message:|^jmap-message:/i.test(attachment.url)
+     ) {
+       try {
+         const messageFile = await messageAttachmentToFile(attachment);
+@@ -8376,7 +8395,7 @@ async function AddAttachments(aAttachments, aContentChanged = true) {
+ 
+     if (
+       attachment.msgUri &&
+-      /^mailbox-message:|^imap-message:|^news-message:/i.test(
++      /^mailbox-message:|^imap-message:|^news-message:|^jmap-message:/i.test(
+         attachment.msgUri
+       ) &&
+       attachment.url &&
+@@ -9408,7 +9427,7 @@ function OpenSelectedAttachment() {
+   const attachment = gAttachmentBucket.getSelectedItem(0).attachment;
+   const attachmentUrl = attachment.url;
+ 
+-  const messagePrefix = /^mailbox-message:|^imap-message:|^news-message:/i;
++  const messagePrefix = /^mailbox-message:|^imap-message:|^news-message:|^jmap-message:/i;
+   if (messagePrefix.test(attachmentUrl)) {
+     // we must be dealing with a forwarded attachment, treat this special
+     const msgHdr =
 diff --git a/mail/components/compose/content/messengercompose.xhtml b/mail/components/compose/content/messengercompose.xhtml
 index ae247ea94cd..2e18cbab4a4 100644
 --- a/mail/components/compose/content/messengercompose.xhtml
@@ -4079,6 +4146,18 @@ index ae247ea94cd..2e18cbab4a4 100644
          <menu id="button-attachPopup_attachCloudMenu"
                label="&attachCloudCmd.label;"
                accesskey="&attachCloudCmd.accesskey;"
+diff --git a/mail/components/extensions/parent/ext-mail.js b/mail/components/extensions/parent/ext-mail.js
+index 600afd881d2..3305a0c44e7 100644
+--- a/mail/components/extensions/parent/ext-mail.js
++++ b/mail/components/extensions/parent/ext-mail.js
+@@ -45,6 +45,7 @@ const MESSAGE_PROTOCOLS = [
+   "snews",
+   "x-moz-ews",
+   "x-moz-graph",
++  "x-moz-jmap",
+ ];
+ 
+ (function () {
 diff --git a/mail/components/jmapfiles/content/jmapFiles.css b/mail/components/jmapfiles/content/jmapFiles.css
 new file mode 100644
 index 00000000000..08bccef7a41
@@ -4843,10 +4922,10 @@ index 00000000000..eaade49abd5
 +}
 diff --git a/mail/components/jmapfiles/content/jmapFilesView.js b/mail/components/jmapfiles/content/jmapFilesView.js
 new file mode 100644
-index 00000000000..f3189d88588
+index 00000000000..b220c9fd486
 --- /dev/null
 +++ b/mail/components/jmapfiles/content/jmapFilesView.js
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,363 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5100,8 +5179,21 @@ index 00000000000..f3189d88588
 +      this.anchorIndex = index;
 +    }
 +    this.focusIndex = index;
-+    this.render();
++    this._updateSelection();
 +    this.el.list.tBodies[0].rows[index]?.scrollIntoView({ block: "nearest" });
++  }
++
++  /**
++   * Reflect `this.selected` on the existing rows. Rows are not rebuilt: a
++   * double-click only fires when both clicks hit the same element.
++   */
++  _updateSelection() {
++    for (const tr of this.el.list.tBodies[0].rows) {
++      const isSelected = this.selected.has(tr.dataset.id);
++      tr.classList.toggle("selected", isSelected);
++      tr.setAttribute("aria-selected", isSelected);
++    }
++    this.options.onSelect?.(this.selectedNodes);
 +  }
 +
 +  _onClick(e) {
@@ -7391,6 +7483,19 @@ index 00000000000..f39ab0785a1
 +# Variables:
 +#   $message (String) - Error details.
 +jmap-error = Error: { $message }
+diff --git a/mail/modules/AttachmentInfo.sys.mjs b/mail/modules/AttachmentInfo.sys.mjs
+index e50c586be74..90d697e664b 100644
+--- a/mail/modules/AttachmentInfo.sys.mjs
++++ b/mail/modules/AttachmentInfo.sys.mjs
+@@ -1145,7 +1145,7 @@ export class AttachmentInfo {
+     }
+ 
+     // Don't allow http for other cases.
+-    return /^(file|data|mailbox|imap|s?news|x-moz-ews|x-moz-graph):/i.test(
++    return /^(file|data|mailbox|imap|s?news|x-moz-ews|x-moz-graph|x-moz-jmap):/i.test(
+       this.url
+     );
+   }
 diff --git a/mail/themes/shared/mail/spacesToolbar.css b/mail/themes/shared/mail/spacesToolbar.css
 index a605aefbf04..4c195ede299 100644
 --- a/mail/themes/shared/mail/spacesToolbar.css

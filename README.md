@@ -35,7 +35,10 @@ Updates from Mozilla are not accepted.
 
 `patches/thunderbird-jmap.patch` applies on top of comm-central
 `5ca7b8c98d1cdbed7c17e475d7b57a14804bb2f7`, inside a Firefox tree at
-`b42441b06b` (mozilla-firefox/firefox). Build with
+`b42441b06b` (mozilla-firefox/firefox). `patches/gecko-jmap.patch` applies to
+the Firefox tree itself: Gecko only loads a fixed list of mail URL schemes in
+the parent process, and the JMAP message scheme (`x-moz-jmap`) has to be on it
+or messages never display. Build with
 `ac_add_options --enable-project=comm/mail` and
 `ac_add_options --enable-update-channel=jmap`.
 

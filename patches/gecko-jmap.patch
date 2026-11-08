@@ -1,0 +1,39 @@
+diff --git a/docshell/base/BaseHistory.cpp b/docshell/base/BaseHistory.cpp
+index 0b2e3dc8e2..c9af4a6e27 100644
+--- a/docshell/base/BaseHistory.cpp
++++ b/docshell/base/BaseHistory.cpp
+@@ -23,7 +23,7 @@ static constexpr nsLiteralCString kDisallowedSchemes[] = {
+     "javascript"_ns,    "mailbox"_ns,        "news"_ns,
+     "page-icon"_ns,     "resource"_ns,       "view-source"_ns,
+     "moz-extension"_ns, "moz-page-thumb"_ns, "moz-src"_ns,
+-    "x-moz-ews"_ns,     "x-moz-graph"_ns};
++    "x-moz-ews"_ns,     "x-moz-graph"_ns,    "x-moz-jmap"_ns};
+ 
+ // about:smartpage renders a page the user asked Firefox to generate, so unlike
+ // the rest of about: it belongs in history alongside the pages they browsed to.
+diff --git a/docshell/base/nsDocShell.cpp b/docshell/base/nsDocShell.cpp
+index addf351a7c..3a4e902665 100644
+--- a/docshell/base/nsDocShell.cpp
++++ b/docshell/base/nsDocShell.cpp
+@@ -9325,7 +9325,7 @@ bool nsDocShell::CanLoadInParentProcess(nsIURI* aURI) {
+   if (uri->SchemeIs("imap") || uri->SchemeIs("mailbox") ||
+       uri->SchemeIs("news") || uri->SchemeIs("nntp") ||
+       uri->SchemeIs("snews") || uri->SchemeIs("x-moz-ews") ||
+-      uri->SchemeIs("x-moz-graph")) {
++      uri->SchemeIs("x-moz-graph") || uri->SchemeIs("x-moz-jmap")) {
+     return true;
+   }
+ #endif
+diff --git a/dom/ipc/ProcessIsolation.cpp b/dom/ipc/ProcessIsolation.cpp
+index d0ebeda7e9..4ef262af82 100644
+--- a/dom/ipc/ProcessIsolation.cpp
++++ b/dom/ipc/ProcessIsolation.cpp
+@@ -354,7 +354,7 @@ static IsolationBehavior IsolationBehaviorForURI(nsIURI* aURI,
+   // Protocols used by Thunderbird to display email messages.
+   if (scheme == "imap"_ns || scheme == "mailbox"_ns || scheme == "news"_ns ||
+       scheme == "nntp"_ns || scheme == "snews"_ns || scheme == "x-moz-ews"_ns ||
+-      scheme == "x-moz-graph"_ns) {
++      scheme == "x-moz-graph"_ns || scheme == "x-moz-jmap"_ns) {
+     return IsolationBehavior::Parent;
+   }
+ 
