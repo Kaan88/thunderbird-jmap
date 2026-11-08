@@ -24,6 +24,27 @@ index addf351a7c..3a4e902665 100644
      return true;
    }
  #endif
+diff --git a/dom/base/nsFrameLoader.cpp b/dom/base/nsFrameLoader.cpp
+index d053fbe719..3046f2e931 100644
+--- a/dom/base/nsFrameLoader.cpp
++++ b/dom/base/nsFrameLoader.cpp
+@@ -2603,6 +2603,8 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
+       //   about:aichatcontent frame to contain LLM responses.
+       // - about:preferences (in Thunderbird only) so it can load remote
+       //     extension options pages for FileLink providers
++      // - the JMAP Files tab (in Thunderbird only) so it can preview PDFs
++      //     and web pages in a remote frame
+       // - DevTools webext panels if DevTools is loaded in a content frame
+       // - DevTools Network Monitor, which uses content frame for HTML request
+       // previews
+@@ -2631,6 +2633,7 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
+             "about:3pane"_ns,
+             "about:message"_ns,
+             "about:preferences"_ns,
++            "chrome://messenger/content/jmapfiles/jmapFiles.xhtml"_ns,
+ #endif
+             "chrome://browser/content/webext-panels.xhtml"_ns,
+             "chrome://devtools/content/netmonitor/index.html"_ns,
 diff --git a/dom/ipc/ProcessIsolation.cpp b/dom/ipc/ProcessIsolation.cpp
 index d0ebeda7e9..4ef262af82 100644
 --- a/dom/ipc/ProcessIsolation.cpp

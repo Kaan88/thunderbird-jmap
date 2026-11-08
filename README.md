@@ -21,12 +21,26 @@ Stalwart's JMAP features and how this build uses them:
 | Sieve filters | `urn:ietf:params:jmap:sieve` | Edit, validate and activate Sieve scripts in Account Settings |
 | Vacation replies | `urn:ietf:params:jmap:vacationresponse` | Out-of-office settings in Account Settings |
 | Quota | `urn:ietf:params:jmap:quota` | Storage use shown per folder |
+| OAuth sign-in | OAuth 2.0 authorization server (RFC 8414, PKCE, RFC 7591) | "Sign in with Stalwart" in your default browser, so SSO and TOTP work; tokens refresh automatically |
 
 Rate limits (HTTP 429) and `maxConcurrentRequests` are respected, so it works
 against a production Stalwart server, not just a lenient test server.
 
-Not supported yet: signing in with Stalwart OAuth (SSO, TOTP), which is in
-progress; shared mailboxes from other accounts; JMAP over WebSocket.
+Not supported yet: shared mailboxes from other accounts; JMAP over WebSocket.
+
+### Stalwart OAuth client setup
+
+For OAuth sign-in, register a client once in the Stalwart admin under
+**Management > Directory > OAuth Clients**:
+
+- Client ID: `thunderbird-jmap`
+- Redirect URIs: `http://127.0.0.1/` and `http://[::1]/`
+- No client secret
+- Scopes: Mail, Contacts, Calendars, Files
+
+Then use **Account Settings > JMAP > Sign in with Stalwart…**, or pick OAuth2
+in the account wizard. If no client is registered, Thunderbird falls back to
+dynamic client registration when the server allows it.
 
 ## Features
 
@@ -35,8 +49,11 @@ progress; shared mailboxes from other accounts; JMAP over WebSocket.
   filters and junk handling, offline queue, push via the JMAP event source.
 - **Contacts** (RFC 9610) as a synced address book.
 - **Calendars** (JMAP Calendars draft) as a calendar provider, with free/busy.
-- **Files** (Stalwart `urn:ietf:params:jmap:filenode`): a FileLink provider, a Files tab,
+- **Files** (Stalwart `urn:ietf:params:jmap:filenode`): a FileLink provider, a Files tab
+  with previews of images, audio, video, PDF, text, code, JSON, CSV and (sandboxed) HTML,
   "Save to Files" for attachments and "Attach from Files" in compose.
+- **OAuth sign-in** with Stalwart in the system browser (SSO, TOTP), with
+  PKCE, refresh-token rotation and password fallback.
 - **Account setup**: enter your email address and the account wizard finds
   Stalwart through `/.well-known/jmap`, preferring JMAP when the server offers
   it. Vacation response, Sieve scripts and push settings live in Account Settings.
