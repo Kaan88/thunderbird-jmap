@@ -1,3 +1,18 @@
+diff --git a/calendar/base/content/calendar-management.js b/calendar/base/content/calendar-management.js
+index a767c45a141..0a675f514b8 100644
+--- a/calendar/base/content/calendar-management.js
++++ b/calendar/base/content/calendar-management.js
+@@ -294,6 +294,10 @@ async function loadCalendarManager() {
+   });
+   calendarList.addEventListener("select", () => {
+     const item = calendarList.rows[calendarList.selectedIndex];
++    if (!item) {
++      // Nothing selected, e.g. while the first calendar is being added.
++      return;
++    }
+     const calendarId = item.getAttribute("calendar-id");
+     const calendar = cal.manager.getCalendarById(calendarId);
+ 
 diff --git a/calendar/base/content/dialogs/calendar-creation.js b/calendar/base/content/dialogs/calendar-creation.js
 index 9545402eb75..12479f7604b 100644
 --- a/calendar/base/content/dialogs/calendar-creation.js
@@ -95,6 +110,19 @@ index 6c42794e4c8..0c51a16a837 100644
          <html:tr id="network-username-row">
            <html:th>
              <label data-l10n-id="calendar-creation-username" control="network-username-input" />
+diff --git a/calendar/base/content/item-editing/calendar-task-editing.js b/calendar/base/content/item-editing/calendar-task-editing.js
+index 62f6aaa0453..557895c2e19 100644
+--- a/calendar/base/content/item-editing/calendar-task-editing.js
++++ b/calendar/base/content/item-editing/calendar-task-editing.js
+@@ -164,7 +164,7 @@ var taskEdit = {
+     onError() {},
+ 
+     onPropertyChanged(aCalendar, aName) {
+-      if (aCalendar.id != getSelectedCalendar().id) {
++      if (aCalendar.id != getSelectedCalendar()?.id) {
+         // Optimization: if the given calendar isn't the selected calendar,
+         // then we don't need to change any readonly/disabled states.
+         return;
 diff --git a/calendar/base/modules/utils/calProviderUtils.sys.mjs b/calendar/base/modules/utils/calProviderUtils.sys.mjs
 index 41802f1debe..e4faf880eea 100644
 --- a/calendar/base/modules/utils/calProviderUtils.sys.mjs
@@ -140,10 +168,10 @@ index 5e4b5044e16..1b706dc3f3a 100644
 +jmap-calendar-provider-name = JMAP Calendar
 diff --git a/calendar/providers/jmap/CalJmapCalendar.sys.mjs b/calendar/providers/jmap/CalJmapCalendar.sys.mjs
 new file mode 100644
-index 00000000000..2ffb08212b2
+index 00000000000..aa7cde28569
 --- /dev/null
 +++ b/calendar/providers/jmap/CalJmapCalendar.sys.mjs
-@@ -0,0 +1,646 @@
+@@ -0,0 +1,665 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -161,6 +189,7 @@ index 00000000000..2ffb08212b2
 + */
 +
 +import { cal } from "resource:///modules/calendar/calUtils.sys.mjs";
++import { setTimeout, clearTimeout } from "resource://gre/modules/Timer.sys.mjs";
 +import {
 +  JMAP_ID_PROPERTY,
 +  fromJSCalendar,
@@ -403,7 +432,9 @@ index 00000000000..2ffb08212b2
 +      const changes = await events.changesSince(this.#state);
 +      if (changes) {
 +        const changed = [...changes.created, ...changes.updated];
-+        const fetched = changed.length ? await events.get(changed) : { list: [] };
++        const fetched = changed.length
++          ? await events.get(changed)
++          : { list: [], notFound: [] };
 +        this.startBatch();
 +        try {
 +          for (const js of fetched.list) {
@@ -413,7 +444,10 @@ index 00000000000..2ffb08212b2
 +              await this.#removeByJmapId(js.id);
 +            }
 +          }
-+          for (const id of [...changes.destroyed, ...fetched.notFound]) {
++          for (const id of [
++            ...(changes.destroyed ?? []),
++            ...(fetched.notFound ?? []),
++          ]) {
 +            await this.#removeByJmapId(id);
 +          }
 +        } finally {
@@ -603,6 +637,19 @@ index 00000000000..2ffb08212b2
 +        );
 +        const parsed = result.args.parsed?.[blobId];
 +        js = Array.isArray(parsed) ? parsed[0] : parsed;
++        if (js) {
++          // Stalwart returns server-set properties as null and may use the
++          // JSCalendar 1.0 singular `recurrenceRule`; normalise for /set.
++          for (const [key, value] of Object.entries(js)) {
++            if (value === null) {
++              delete js[key];
++            }
++          }
++          if (js.recurrenceRule && !js.recurrenceRules) {
++            js.recurrenceRules = [js.recurrenceRule];
++          }
++          delete js.recurrenceRule;
++        }
 +      } catch (e) {
 +        lazy.log.warn("CalendarEvent/parse failed, using local mapping", e);
 +      }
@@ -3489,7 +3536,7 @@ index f56e8e4a542..f8169c999af 100644
     * Verify that the provided credentials can log in to the incoming server.
     */
 diff --git a/mail/components/accountcreation/modules/CreateInBackend.sys.mjs b/mail/components/accountcreation/modules/CreateInBackend.sys.mjs
-index 69e8b96739c..5dea132a1d6 100644
+index 69e8b96739c..6fb6ef823bc 100644
 --- a/mail/components/accountcreation/modules/CreateInBackend.sys.mjs
 +++ b/mail/components/accountcreation/modules/CreateInBackend.sys.mjs
 @@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
@@ -3521,7 +3568,7 @@ index 69e8b96739c..5dea132a1d6 100644
    // incoming server
    const inServer = MailServices.accounts.createIncomingServer(
      config.incoming.username,
-@@ -121,8 +136,34 @@ async function createAccountInBackend(config) {
+@@ -121,8 +136,41 @@ async function createAccountInBackend(config) {
      inServer.setStringValue("eas_url", config.incoming.easURL);
    }
    applyExchangeOAuthSettings(inServer, config.incoming);
@@ -3534,6 +3581,13 @@ index 69e8b96739c..5dea132a1d6 100644
 +      } catch (e) {
 +        inServer.setStringValue("jmap_session_url", config.incoming.sessionUrl);
 +      }
++    }
++    // A removed account with the same server URI leaves its sync state in
++    // the folder cache; start this account from a full sync.
++    try {
++      inServer.rootFolder.setStringProperty("jmapEmailState", "");
++    } catch (e) {
++      console.warn("JMAP: could not reset the sync state", e);
 +    }
 +    inServer.setBoolValue(
 +      "jmap_push_enabled",
@@ -3556,7 +3610,7 @@ index 69e8b96739c..5dea132a1d6 100644
    if (config.configureOutgoingFromIncoming()) {
      // If this type does not differentiate between incoming and outgoing
      // configuration, then use the incoming settings to configure the outgoing
-@@ -131,6 +172,10 @@ async function createAccountInBackend(config) {
+@@ -131,6 +179,10 @@ async function createAccountInBackend(config) {
      // This property does not exist on incoming configs.
      config.outgoing.addThisServer = true;
    }
@@ -3567,7 +3621,7 @@ index 69e8b96739c..5dea132a1d6 100644
  
    const username =
      config.outgoing.auth != Ci.nsMsgAuthMethod.none
-@@ -172,6 +217,19 @@ async function createAccountInBackend(config) {
+@@ -172,6 +224,19 @@ async function createAccountInBackend(config) {
        MailServices.outgoingServer.deleteServer(outServer);
        throw e;
      }
@@ -3587,7 +3641,7 @@ index 69e8b96739c..5dea132a1d6 100644
    }
  
    // identity
-@@ -182,7 +240,7 @@ async function createAccountInBackend(config) {
+@@ -182,7 +247,7 @@ async function createAccountInBackend(config) {
  
    // for new accounts, default to replies being positioned above the quote
    // if a default account is defined already, take its settings instead
@@ -3596,7 +3650,7 @@ index 69e8b96739c..5dea132a1d6 100644
      identity.replyOnTop = 1;
      // identity.sigBottom = false; // don't set this until Bug 218346 is fixed
  
-@@ -239,7 +297,7 @@ async function createAccountInBackend(config) {
+@@ -239,7 +304,7 @@ async function createAccountInBackend(config) {
  
    verifyLocalFoldersAccount();
  
@@ -3605,7 +3659,7 @@ index 69e8b96739c..5dea132a1d6 100644
      // EWS doesn't use the same names as IMAP et al for its notable folders, and
      // there's no guarantee the folder names will always be the same and not be
      // e.g. localized depending on the organization's primary language. The EWS
-@@ -259,6 +317,10 @@ async function createAccountInBackend(config) {
+@@ -259,6 +324,10 @@ async function createAccountInBackend(config) {
        ex
      );
    }
@@ -3616,7 +3670,7 @@ index 69e8b96739c..5dea132a1d6 100644
    return account;
  }
  
-@@ -295,6 +357,21 @@ async function configureOutgoingServer(
+@@ -295,6 +364,21 @@ async function configureOutgoingServer(
      // types (e.g. EWS) it is derived from the URL used to configure the
      // server.
      outServer.socketType = config.outgoing.socketType;
@@ -3638,7 +3692,7 @@ index 69e8b96739c..5dea132a1d6 100644
    } else if (config.outgoing.type == "ews" || config.outgoing.type == "graph") {
      const ewsServer = outServer.QueryInterface(Ci.IExchangeOutgoingServer);
      ewsServer.exchangeUrl = config.outgoing.exchangeURL;
-@@ -526,7 +603,80 @@ function verifyLocalFoldersAccount() {
+@@ -526,7 +610,80 @@ function verifyLocalFoldersAccount() {
    }
  }
  
@@ -4393,16 +4447,20 @@ index ec6ec53fe5b..f5e5873c8b7 100644
                        value="1">IMAP</option>
                <option id="incomingProtocolPOP3"
 diff --git a/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml b/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
-index 04ef0ca1cd8..89a219a6ab3 100644
+index 04ef0ca1cd8..e69517ffea4 100644
 --- a/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
 +++ b/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
-@@ -17,6 +17,25 @@
+@@ -17,6 +17,26 @@
                 data-l10n-attrs="accesskey">
          </label>
        </div>
 +      <details id="jmapTotpDetails" class="jmap-totp-details" hidden="hidden">
 +        <summary data-l10n-id="account-hub-jmap-totp-summary"></summary>
-+        <div class="input-control">
++        <div class="input-control vertical jmap-totp-control">
++          <label for="jmapTotp"
++                 class="jmap-totp-label"
++                 data-l10n-id="account-hub-jmap-totp-label">
++          </label>
 +          <input id="jmapTotp"
 +                 type="text"
 +                 class="input-field"
@@ -4411,9 +4469,6 @@ index 04ef0ca1cd8..89a219a6ab3 100644
 +                 maxlength="8"
 +                 pattern="[0-9]*"
 +                 aria-describedby="jmapTotpHelp" />
-+          <label for="jmapTotp"
-+                 data-l10n-id="account-hub-jmap-totp-label">
-+          </label>
 +          <p id="jmapTotpHelp"
 +             class="input-help"
 +             data-l10n-id="account-hub-jmap-totp-help"></p>
@@ -10096,7 +10151,7 @@ index 00000000000..d51178692eb
 +}
 diff --git a/mail/components/jmapfiles/modules/JmapFiles.sys.mjs b/mail/components/jmapfiles/modules/JmapFiles.sys.mjs
 new file mode 100644
-index 00000000000..9429803f922
+index 00000000000..87ee04e3328
 --- /dev/null
 +++ b/mail/components/jmapfiles/modules/JmapFiles.sys.mjs
 @@ -0,0 +1,938 @@
@@ -10492,7 +10547,7 @@ index 00000000000..9429803f922
 +      for (const raw of result.list) {
 +        this.#store(raw);
 +      }
-+      for (const id of result.notFound) {
++      for (const id of result.notFound ?? []) {
 +        this.#forget(id);
 +      }
 +    }
@@ -12557,6 +12612,40 @@ index e50c586be74..90d697e664b 100644
        this.url
      );
    }
+diff --git a/mail/themes/shared/mail/accountHubForms.css b/mail/themes/shared/mail/accountHubForms.css
+index 6e3041ec054..aa5e327a0ab 100644
+--- a/mail/themes/shared/mail/accountHubForms.css
++++ b/mail/themes/shared/mail/accountHubForms.css
+@@ -1217,3 +1217,29 @@ button.account-hub-option-button {
+   text-align: center;
+   margin-block: 0;
+ }
++
++/* JMAP two-factor code on the password step: label, field and help stacked. */
++.jmap-totp-details {
++  margin-block: 12px;
++
++  & > summary {
++    cursor: pointer;
++    font-size: 0.9em;
++  }
++
++  & .jmap-totp-control {
++    gap: 4px;
++    margin-block-start: 8px;
++  }
++
++  & .jmap-totp-label {
++    font-weight: 600;
++    font-size: 0.9em;
++  }
++
++  & .input-help {
++    margin: 0;
++    font-size: 0.85em;
++    color: var(--color-text-secondary, GrayText);
++  }
++}
 diff --git a/mail/themes/shared/mail/spacesToolbar.css b/mail/themes/shared/mail/spacesToolbar.css
 index a605aefbf04..4c195ede299 100644
 --- a/mail/themes/shared/mail/spacesToolbar.css
@@ -16087,10 +16176,10 @@ index 00000000000..7a8932b5451
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapClient.sys.mjs
 new file mode 100644
-index 00000000000..55eb9db33af
+index 00000000000..185436f7dbe
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapClient.sys.mjs
-@@ -0,0 +1,771 @@
+@@ -0,0 +1,779 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16544,6 +16633,14 @@ index 00000000000..55eb9db33af
 +      const capability = capabilityForMethod(call?.name);
 +      if (capability) {
 +        capabilities.add(capability);
++      }
++      // `<Type>/parse` needs its parse capability and the type's own one.
++      const [dataType, verb] = String(call?.name).split("/", 2);
++      if (verb == "parse") {
++        const base = capabilityForMethod(`${dataType}/get`);
++        if (base) {
++          capabilities.add(base);
++        }
 +      }
 +    }
 +    for (const capability of capabilities) {
@@ -17215,10 +17312,10 @@ index 00000000000..217419298a2
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs b/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs
 new file mode 100644
-index 00000000000..aec80dd0ca9
+index 00000000000..28613c83222
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,409 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17405,6 +17502,15 @@ index 00000000000..aec80dd0ca9
 +    this.#touched.add(folder);
 +    this.#unindexHeader(folder, header);
 +    MailServices.mfn.notifyMsgsDeleted([header]);
++  }
++
++  /**
++   * The number of locally known JMAP messages (after prepare()).
++   *
++   * @returns {number}
++   */
++  localMessageCount() {
++    return this.#headers.size;
 +  }
 +
 +  /**
@@ -22956,10 +23062,10 @@ index 00000000000..6a70c2f83c6
 +};
 diff --git a/mailnews/protocols/jmap/modules/JmapSync.sys.mjs b/mailnews/protocols/jmap/modules/JmapSync.sys.mjs
 new file mode 100644
-index 00000000000..6341db2776b
+index 00000000000..c85e01018a0
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapSync.sys.mjs
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,397 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23074,7 +23180,22 @@ index 00000000000..6341db2776b
 +
 +    await this.#store.prepare(mailboxes);
 +
-+    const state = await this.#store.getState();
++    let state = await this.#store.getState();
++    // A saved state with no local messages while the server has some means
++    // the state does not belong to these folders: e.g. an account removed
++    // and added again keeps its root folder properties in the folder cache.
++    // Changes since that state would never bring the messages back.
++    if (
++      state &&
++      typeof this.#store.localMessageCount == "function" &&
++      this.#store.localMessageCount() == 0 &&
++      mailboxes.some(mailbox => Number(mailbox.totalEmails) > 0)
++    ) {
++      this.#logger?.warn?.(
++        "JMAP sync: saved state but no local messages, performing a full sync"
++      );
++      state = null;
++    }
 +    let stats;
 +    if (!state) {
 +      stats = await this.#fullSync(mailboxes);
@@ -24006,7 +24127,7 @@ index 00000000000..7bbb5365ca8
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapTypeClient.sys.mjs b/mailnews/protocols/jmap/modules/JmapTypeClient.sys.mjs
 new file mode 100644
-index 00000000000..8eca2df451e
+index 00000000000..dd5faab412d
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapTypeClient.sys.mjs
 @@ -0,0 +1,260 @@
@@ -24096,7 +24217,7 @@ index 00000000000..8eca2df451e
 +      );
 +      merged.state = part.state;
 +      merged.list.push(...part.list);
-+      merged.notFound.push(...part.notFound);
++      merged.notFound.push(...(part.notFound ?? []));
 +    }
 +    return merged;
 +  }
@@ -31480,10 +31601,10 @@ index 00000000000..4520caf6c11
 +}
 diff --git a/mailnews/protocols/jmap/test/live/test_live_contacts_calendar.js b/mailnews/protocols/jmap/test/live/test_live_contacts_calendar.js
 new file mode 100644
-index 00000000000..fe42dd28268
+index 00000000000..554bf8c9bcb
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/live/test_live_contacts_calendar.js
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,198 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31491,6 +31612,14 @@ index 00000000000..fe42dd28268
 +/**
 + * Live tests: JMAP contacts (JmapDirectory) and calendars (CalJmapCalendar).
 + */
++
++// Make Services.appinfo.name "xpcshell" before any calendar storage module
++// loads. Otherwise CalStorageItemModel waits for MailGlue.afterStartUp, which
++// never resolves in xpcshell, and every offline-cache read hangs.
++var { updateAppInfo } = ChromeUtils.importESModule(
++  "resource://testing-common/AppInfo.sys.mjs"
++);
++updateAppInfo();
 +
 +var { JmapDirectory } = ChromeUtils.importESModule(
 +  "resource:///modules/JmapDirectory.sys.mjs"
@@ -31612,6 +31741,17 @@ index 00000000000..fe42dd28268
 +  Assert.greater(calendars.length, 0, "at least one JMAP calendar");
 +  const calendar = calendars.find(c => !c.readOnly) ?? calendars[0];
 +
++  // The raw CalJmapCalendar behind the calCachedCalendar wrapper.
++  let raw = calendar.wrappedJSObject ?? calendar;
++  raw = raw.mUncachedCalendar?.wrappedJSObject ?? raw.mUncachedCalendar ?? raw;
++  Assert.equal(raw.type, "jmap", "unwrapped the JMAP provider");
++  const sync = () =>
++    new Promise(resolve => {
++      raw.replayChangesOn({ onResult: (op, result) => resolve(result) });
++    });
++  // Initial (full) sync stores a state for later incremental syncs.
++  Assert.equal(await sync(), Cr.NS_OK, "initial sync succeeds");
++
 +  const title = `Live weekly ${RUN_ID}`;
 +  const event = new CalEvent();
 +  event.icalString = [
@@ -31653,6 +31793,15 @@ index 00000000000..fe42dd28268
 +  await calendar.deleteItem(added);
 +  ({ list } = await getEvent());
 +  Assert.equal(list.length, 0, "event deleted on server");
++
++  // The next incremental sync sees only a destroyed event (no created or
++  // updated ones). Regression: it failed with "fetched.notFound is
++  // undefined".
++  Assert.ok(
++    raw.offlineStorage?.getMetaData("jmap-calendarevent-state"),
++    "calendar has a sync state, so the next sync is incremental"
++  );
++  Assert.equal(await sync(), Cr.NS_OK, "incremental sync after a delete succeeds");
 +});
 diff --git a/mailnews/protocols/jmap/test/live/test_live_files.js b/mailnews/protocols/jmap/test/live/test_live_files.js
 new file mode 100644
@@ -36949,10 +37098,10 @@ index 00000000000..9319895b3ad
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_sync.js b/mailnews/protocols/jmap/test/unit/test_jmap_sync.js
 new file mode 100644
-index 00000000000..bcbe59c78d7
+index 00000000000..ee0583103b5
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/test_jmap_sync.js
-@@ -0,0 +1,465 @@
+@@ -0,0 +1,516 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37012,6 +37161,10 @@ index 00000000000..bcbe59c78d7
 +
 +  remove(folder, header) {
 +    this.rows = this.rows.filter(row => row !== header);
++  }
++
++  localMessageCount() {
++    return this.rows.length;
 +  }
 +
 +  async getState() {
@@ -37417,6 +37570,53 @@ index 00000000000..bcbe59c78d7
 +  Assert.equal(row.message.author, "Alice <alice@example.com>");
 +  Assert.ok(row.message.flags & Ci.nsMsgMessageFlags.Read);
 +  Assert.equal(store.state, "email-state");
++});
++
++add_task(async function test_stale_state_without_local_messages_full_syncs() {
++  // An account removed and added again inherits the old Email state from the
++  // folder cache; Email/changes then reports nothing and the folders would
++  // stay empty forever.
++  const mail = makeFakeMail({
++    mailboxes: [{ id: "inbox", name: "Inbox", role: "inbox", totalEmails: 2 }],
++    emails: [makeEmail("e1"), makeEmail("e2")],
++    changes: {
++      oldState: "old-account-state",
++      newState: "old-account-state",
++      hasMoreChanges: false,
++      created: [],
++      updated: [],
++      destroyed: [],
++    },
++  });
++  const store = new FakeStore();
++  store.state = "old-account-state";
++  const engine = new JmapSyncEngine({ mail, store });
++
++  const stats = await engine.sync();
++
++  Assert.equal(stats.mode, "full", "falls back to a full sync");
++  Assert.equal(store.rows.length, 2, "the messages are synced");
++  Assert.equal(store.state, "email-state");
++  Assert.deepEqual(mail.calls.changes, [], "no Email/changes from the stale state");
++});
++
++add_task(async function test_state_kept_for_empty_server() {
++  const mail = makeFakeMail({
++    mailboxes: [{ id: "inbox", name: "Inbox", role: "inbox", totalEmails: 0 }],
++    emails: [],
++    changes: {
++      oldState: "s1",
++      newState: "s1",
++      hasMoreChanges: false,
++      created: [],
++      updated: [],
++      destroyed: [],
++    },
++  });
++  const store = new FakeStore();
++  store.state = "s1";
++  const stats = await new JmapSyncEngine({ mail, store }).sync();
++  Assert.equal(stats.mode, "incremental", "an empty account stays incremental");
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_transport.js b/mailnews/protocols/jmap/test/unit/test_jmap_transport.js
 new file mode 100644
