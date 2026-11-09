@@ -21,7 +21,7 @@ Stalwart's JMAP features and how this build uses them:
 | Sieve filters | `urn:ietf:params:jmap:sieve` | Edit, validate and activate Sieve scripts in Account Settings |
 | Vacation replies | `urn:ietf:params:jmap:vacationresponse` | Out-of-office settings in Account Settings |
 | Quota | `urn:ietf:params:jmap:quota` | Storage use shown per folder |
-| OAuth sign-in | OAuth 2.0 authorization server (RFC 8414, PKCE, RFC 7591) | "Sign in with Stalwart" in your default browser, so SSO and TOTP work; tokens refresh automatically |
+| OAuth sign-in | OAuth 2.0 authorization server (RFC 8414, PKCE, RFC 7591) | Password (with optional two-factor code, no browser) or "Sign in with Stalwart" in your default browser for SSO; tokens refresh automatically |
 
 Rate limits (HTTP 429) and `maxConcurrentRequests` are respected, so it works
 against a production Stalwart server, not just a lenient test server.

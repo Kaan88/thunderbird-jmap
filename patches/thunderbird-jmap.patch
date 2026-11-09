@@ -2601,10 +2601,87 @@ index e6c3c7b45c3..2ca0676d3f2 100644
  
    handleEvent(event) {
 diff --git a/mail/components/accountcreation/content/widgets/email-config-found.mjs b/mail/components/accountcreation/content/widgets/email-config-found.mjs
-index 082fc0d077b..0517d5bb32a 100644
+index 082fc0d077b..4aace2a7500 100644
 --- a/mail/components/accountcreation/content/widgets/email-config-found.mjs
 +++ b/mail/components/accountcreation/content/widgets/email-config-found.mjs
-@@ -137,6 +137,7 @@ class EmailConfigFound extends AccountHubStep {
+@@ -66,6 +66,10 @@ class EmailConfigFound extends AccountHubStep {
+     this.#protocolForm = this.querySelector("#protocolForm");
+ 
+     this.#protocolForm.addEventListener("change", event => {
++      if (event.target.name == "jmap-sign-in") {
++        this.#updateJmapAuthDisplay();
++        return;
++      }
+       // Remove 'selected' class from all label elements.
+       this.querySelectorAll("label.selected").forEach(label => {
+         label.classList.remove("selected");
+@@ -112,7 +116,64 @@ class EmailConfigFound extends AccountHubStep {
+    * Return the current state of the email setup form.
+    */
+   captureState() {
+-    return this.#selectedConfig.copy();
++    const config = this.#selectedConfig.copy();
++    const incoming = config.incoming;
++    if (this.#offersJmapSignInChoice(incoming)) {
++      incoming.jmapSignIn = this.#getJmapSignIn();
++      incoming.auth =
++        incoming.jmapSignIn == "browser"
++          ? Ci.nsMsgAuthMethod.OAuth2
++          : Ci.nsMsgAuthMethod.passwordCleartext;
++      if (incoming.jmapSignIn == "browser") {
++        incoming.jmapTotp = null;
++      }
++      if (config.configureOutgoingFromIncoming()) {
++        config.outgoing.auth = incoming.auth;
++      }
++    }
++    return config;
++  }
++
++  /**
++   * Whether the user can choose between password and browser sign-in.
++   *
++   * @param {object} incoming - The incoming server config.
++   * @returns {boolean}
++   */
++  #offersJmapSignInChoice(incoming) {
++    return incoming.type == "jmap" && !!incoming.jmapOAuth;
++  }
++
++  /**
++   * The JMAP sign-in method the user picked.
++   *
++   * @returns {"password"|"browser"}
++   */
++  #getJmapSignIn() {
++    return this.querySelector("#jmapSignInBrowser").checked
++      ? "browser"
++      : "password";
++  }
++
++  /**
++   * Shows the authentication type matching the chosen JMAP sign-in method.
++   */
++  #updateJmapAuthDisplay() {
++    const incoming = this.#selectedConfig?.incoming;
++    if (!incoming || !this.#offersJmapSignInChoice(incoming)) {
++      return;
++    }
++    const authType = this.querySelector("#incomingAuthenticationType");
++    if (this.#getJmapSignIn() == "browser") {
++      document.l10n.setAttributes(authType, "account-hub-result-jmap-oauth", {
++        provider: incoming.jmapOAuth.displayName || incoming.hostname,
++      });
++    } else {
++      document.l10n.setAttributes(
++        authType,
++        "account-hub-result-authentication-password"
++      );
++    }
+   }
+ 
+   /**
+@@ -137,6 +198,7 @@ class EmailConfigFound extends AccountHubStep {
      }
  
      const configLabels = [
@@ -2612,7 +2689,7 @@ index 082fc0d077b..0517d5bb32a 100644
        this.querySelector("#imap"),
        this.querySelector("#pop3"),
        this.querySelector("#exchange"),
-@@ -253,7 +254,11 @@ class EmailConfigFound extends AccountHubStep {
+@@ -253,7 +315,11 @@ class EmailConfigFound extends AccountHubStep {
      const outgoing = this.#currentConfig.outgoing;
  
      const incomingType = this.querySelector("#incomingType");
@@ -2625,7 +2702,7 @@ index 082fc0d077b..0517d5bb32a 100644
        document.l10n.setAttributes(
          incomingType,
          `account-hub-result-${incoming.type}-expanded-text`
-@@ -270,7 +275,9 @@ class EmailConfigFound extends AccountHubStep {
+@@ -270,7 +336,9 @@ class EmailConfigFound extends AccountHubStep {
  
      this.#setTextAndTitle(
        this.querySelector("#incomingHost"),
@@ -2636,7 +2713,7 @@ index 082fc0d077b..0517d5bb32a 100644
      );
      this.#setTextAndTitle(this.querySelector("#incomingPort"), incoming.port);
      this.#setTextAndTitle(
-@@ -281,10 +288,22 @@ class EmailConfigFound extends AccountHubStep {
+@@ -281,10 +349,25 @@ class EmailConfigFound extends AccountHubStep {
        this.querySelector("#incomingSocketType"),
        incomingSocketTypeL10Id
      );
@@ -2644,14 +2721,17 @@ index 082fc0d077b..0517d5bb32a 100644
 -      this.querySelector("#incomingAuthenticationType"),
 -      incomingAuthTypeL10Id
 -    );
-+    if (
-+      incoming.type == "jmap" &&
-+      incoming.auth == Ci.nsMsgAuthMethod.OAuth2 &&
-+      incoming.jmapOAuth
-+    ) {
++    const offersJmapChoice = this.#offersJmapSignInChoice(incoming);
++    this.querySelector("#jmapSignInChoice").hidden = !offersJmapChoice;
++    if (offersJmapChoice) {
++      // Password sign-in is the default; the browser only opens when the
++      // user explicitly picks it.
++      const browser = incoming.jmapSignIn == "browser";
++      this.querySelector("#jmapSignInBrowser").checked = browser;
++      this.querySelector("#jmapSignInPassword").checked = !browser;
 +      document.l10n.setAttributes(
-+        this.querySelector("#incomingAuthenticationType"),
-+        "account-hub-result-jmap-oauth",
++        this.querySelector("#jmapSignInBrowserLabel"),
++        "account-hub-jmap-sign-in-browser",
 +        { provider: incoming.jmapOAuth.displayName || incoming.hostname }
 +      );
 +    } else {
@@ -2663,7 +2743,13 @@ index 082fc0d077b..0517d5bb32a 100644
  
      const owlExchangeDescription = this.querySelector(
        "#owlExchangeDescription"
-@@ -301,6 +320,7 @@ class EmailConfigFound extends AccountHubStep {
+@@ -296,11 +379,13 @@ class EmailConfigFound extends AccountHubStep {
+ 
+     this.#selectedConfig = this.#currentConfig.copy();
+     this.#selectedConfig.incoming = incoming;
++    this.#updateJmapAuthDisplay();
+ 
+     this.#setContinueState();
  
      if (
        !outgoing ||
@@ -2672,7 +2758,7 @@ index 082fc0d077b..0517d5bb32a 100644
        incoming.type == "exchange" ||
        incoming.type == "graph"
 diff --git a/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs b/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
-index b1a68545c6c..5131f5b03e9 100644
+index b1a68545c6c..8ffe303c28c 100644
 --- a/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
 +++ b/mail/components/accountcreation/content/widgets/email-manual-incoming-form.mjs
 @@ -115,6 +115,13 @@ class EmailIncomingForm extends AccountHubStep {
@@ -2741,7 +2827,25 @@ index b1a68545c6c..5131f5b03e9 100644
        config = this.#getExchangeConfigValues(config);
      } else {
        config = this.#getDefaultConfigValues(config);
-@@ -456,13 +488,13 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -433,6 +465,17 @@ class EmailIncomingForm extends AccountHubStep {
+     config.incoming.auth = InputSanitizer.integer(
+       this.#incomingAuthenticationMethod.value
+     );
++    if (config.incoming.type == "jmap") {
++      // OAuth2 here means signing in through the browser; anything else uses
++      // the password (with an optional two-factor code).
++      config.incoming.jmapSignIn =
++        config.incoming.auth == Ci.nsMsgAuthMethod.OAuth2
++          ? "browser"
++          : "password";
++      if (config.incoming.jmapSignIn == "browser") {
++        config.incoming.jmapTotp = null;
++      }
++    }
+     config.incoming.username = this.#incomingUsername.value;
+     !this.#incomingUsername.value
+       ? this.#incomingUsername.setAttribute(
+@@ -456,13 +499,13 @@ class EmailIncomingForm extends AccountHubStep {
     */
    updateFields(config) {
      assert(config instanceof AccountConfig);
@@ -2758,7 +2862,7 @@ index b1a68545c6c..5131f5b03e9 100644
      this.#incomingHostname.value = config.incoming.hostname;
      this.#incomingConnectionSecurity.value = InputSanitizer.enum(
        config.incoming.socketType,
-@@ -478,6 +510,10 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -478,6 +521,10 @@ class EmailIncomingForm extends AccountHubStep {
      }
  
      this.#incomingExchangeUrl.value =
@@ -2769,7 +2873,7 @@ index b1a68545c6c..5131f5b03e9 100644
        config.incoming.exchangeURL ||
        (config.incoming.hostname &&
          config.incoming.hostname[0] != "." &&
-@@ -597,6 +633,13 @@ class EmailIncomingForm extends AccountHubStep {
+@@ -597,6 +644,13 @@ class EmailIncomingForm extends AccountHubStep {
     * @param {boolean} isExchange - If the config is an EWS config.
     */
    #updateConfigInputsVisibility(isExchange) {
@@ -2783,11 +2887,93 @@ index b1a68545c6c..5131f5b03e9 100644
      const configOptions = {
        "#incomingHostnameFormGroup": isExchange,
        "#incomingExchangeUrlFormGroup": !isExchange,
+diff --git a/mail/components/accountcreation/content/widgets/email-password-form.mjs b/mail/components/accountcreation/content/widgets/email-password-form.mjs
+index 3bbb85f4334..83dcb6b9968 100644
+--- a/mail/components/accountcreation/content/widgets/email-password-form.mjs
++++ b/mail/components/accountcreation/content/widgets/email-password-form.mjs
+@@ -14,6 +14,7 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
+  *  login.
+  * @property {boolean} rememberPassword - Remember the password when fetching
+  *  account information.
++ * @property {?string} totp - JMAP only: the two-factor code, if entered.
+  */
+ 
+ /**
+@@ -113,9 +114,45 @@ export class EmailPasswordForm extends AccountHubStep {
+    */
+   setState() {
+     this.querySelector(this._formSelector).reset();
++    const details = this.querySelector("#jmapTotpDetails");
++    if (details) {
++      details.open = false;
++    }
+     this.#password.focus();
+   }
+ 
++  /**
++   * Shows or hides the JMAP two-factor code disclosure (collapsed).
++   *
++   * @param {boolean} visible
++   */
++  setTotpAvailable(visible) {
++    const details = this.querySelector("#jmapTotpDetails");
++    if (!details) {
++      return;
++    }
++    details.hidden = !visible;
++    if (!visible) {
++      details.open = false;
++      this.querySelector("#jmapTotp").value = "";
++    }
++  }
++
++  /**
++   * Expands the two-factor code disclosure and focuses the code input.
++   */
++  showTotp() {
++    const details = this.querySelector("#jmapTotpDetails");
++    if (!details) {
++      return;
++    }
++    details.hidden = false;
++    details.open = true;
++    const input = this.querySelector("#jmapTotp");
++    input.select();
++    input.focus();
++  }
++
+   /**
+    * Return the current state of the email setup form.
+    *
+@@ -125,9 +162,23 @@ export class EmailPasswordForm extends AccountHubStep {
+     return {
+       password: this.#password.value,
+       rememberPassword: this.#rememberPassword.checked,
++      ...this.#getTotp(),
+     };
+   }
+ 
++  /**
++   * The entered two-factor code, if the disclosure is available (JMAP only).
++   *
++   * @returns {{totp: ?string}|{}}
++   */
++  #getTotp() {
++    const details = this.querySelector("#jmapTotpDetails");
++    if (!details || details.hidden) {
++      return {};
++    }
++    return { totp: this.querySelector("#jmapTotp").value.trim() || null };
++  }
++
+   /**
+    * Updates the remember password input checkbox depending on the user's
+    * preference for allowing remembering a password.
 diff --git a/mail/components/accountcreation/modules/AccountConfig.sys.mjs b/mail/components/accountcreation/modules/AccountConfig.sys.mjs
-index fc080c48220..4a7ebc5498f 100644
+index fc080c48220..4b6320246de 100644
 --- a/mail/components/accountcreation/modules/AccountConfig.sys.mjs
 +++ b/mail/components/accountcreation/modules/AccountConfig.sys.mjs
-@@ -151,6 +151,15 @@ AccountConfig.prototype = {
+@@ -151,6 +151,22 @@ AccountConfig.prototype = {
        // Optional custom OAuth details for Exchange servers.
        oauthSettings: null,
  
@@ -2799,11 +2985,18 @@ index fc080c48220..4a7ebc5498f 100644
 +      // OAuth2 sign-in. Verification adds the resolved `client`
 +      // ({clientId, clientSecret, dynamic}) and the granted `scopes`.
 +      jmapOAuth: null,
++      // JMAP only: how the user chose to sign in when jmapOAuth is set:
++      // "password" (password, optionally with a two-factor code) or
++      // "browser" (OAuth2 sign-in in the browser).
++      jmapSignIn: "password",
++      // JMAP only: one-time two-factor (TOTP) code entered with the password.
++      // Only used during verification, never persisted.
++      jmapTotp: null,
 +
        // for when an addon overrides the account type. Optional.
        addonAccountType: null,
      };
-@@ -273,6 +282,9 @@ AccountConfig.prototype = {
+@@ -273,6 +289,9 @@ AccountConfig.prototype = {
    },
  
    isIncomingEditedComplete() {
@@ -2813,7 +3006,7 @@ index fc080c48220..4a7ebc5498f 100644
      return (
        (this.isExchangeConfig() &&
          this.incoming.exchangeURL &&
-@@ -395,6 +407,30 @@ AccountConfig.prototype = {
+@@ -395,6 +414,30 @@ AccountConfig.prototype = {
      this.incoming = alternatives.shift();
    },
  
@@ -2844,7 +3037,7 @@ index fc080c48220..4a7ebc5498f 100644
    /**
     * True if all servers use OAuth2 as authentication method and no password
     * entry is required.
-@@ -500,9 +536,31 @@ AccountConfig.prototype = {
+@@ -500,9 +543,31 @@ AccountConfig.prototype = {
     * @returns {boolean}
     */
    configureOutgoingFromIncoming() {
@@ -2878,7 +3071,7 @@ index fc080c48220..4a7ebc5498f 100644
  
  // enum consts
 diff --git a/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs b/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
-index f56e8e4a542..a800d215ab9 100644
+index f56e8e4a542..f8169c999af 100644
 --- a/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
 +++ b/mail/components/accountcreation/modules/ConfigVerifier.sys.mjs
 @@ -10,9 +10,15 @@ const lazy = {};
@@ -2971,7 +3164,7 @@ index f56e8e4a542..a800d215ab9 100644
      return new Promise((resolve, reject) => {
        this.config = config;
        this._triedBothUsernames = false;
-@@ -457,6 +516,190 @@ export class ConfigVerifier {
+@@ -457,6 +516,323 @@ export class ConfigVerifier {
      });
    }
  
@@ -3007,8 +3200,19 @@ index f56e8e4a542..a800d215ab9 100644
 +    ) {
 +      throw new Error("Incoming server exists");
 +    }
-+    if (incoming.auth == Ci.nsMsgAuthMethod.OAuth2) {
++    if (
++      incoming.jmapSignIn == "browser" ||
++      (!incoming.jmapSignIn &&
++        incoming.auth == Ci.nsMsgAuthMethod.OAuth2 &&
++        !incoming.password)
++    ) {
 +      return this.verifyJmapOAuthConfig(config);
++    }
++    if (incoming.jmapTotp) {
++      const info = await this._jmapOAuthInfo(config);
++      if (info) {
++        return this.verifyJmapPasswordSignIn(config, info, incoming.jmapTotp);
++      }
 +    }
 +    const usernames = [incoming.username];
 +    if (this.alter && incoming.username?.includes("@")) {
@@ -3046,9 +3250,131 @@ index f56e8e4a542..a800d215ab9 100644
 +      }
 +    }
 +    if (lastError?.status == 401 || lastError?.status == 403) {
++      // The server may refuse a normal password over Basic (e.g. Stalwart
++      // with two-factor authentication), but accept it through its OAuth
++      // login API.
++      const info = await this._jmapOAuthInfo(config);
++      if (info) {
++        return this.verifyJmapPasswordSignIn(config, info, null);
++      }
 +      throw new Error(lazy.l10n.formatValueSync("cannot-login-error"));
 +    }
 +    throw lastError ?? new Error("JMAP verification failed");
++  }
++
++  /**
++   * The server's OAuth2 details, from the config or by discovery.
++   *
++   * @param {AccountConfig} config
++   * @returns {Promise<?OAuthInfo>} null when OAuth2 is not available.
++   */
++  async _jmapOAuthInfo(config) {
++    const incoming = config.incoming;
++    if (incoming.jmapOAuth) {
++      return incoming.jmapOAuth;
++    }
++    try {
++      return await lazy.JmapOAuth.discover(incoming.sessionUrl, {
++        signal: this.signal,
++      });
++    } catch (e) {
++      if (this.signal?.aborted || e.name == "AbortError") {
++        throw e;
++      }
++      this._log.info(`JMAP OAuth2 discovery failed: ${e}`);
++      return null;
++    }
++  }
++
++  /**
++   * Sign in with the password (and the TOTP code, if any) through the
++   * server's OAuth2 login API, without a browser. On success the config is
++   * switched to OAuth2, the tokens are stored for the server created later,
++   * and the password is not kept.
++   *
++   * @param {AccountConfig} config
++   * @param {OAuthInfo} info
++   * @param {?string} totp
++   * @returns {Promise<AccountConfig>}
++   */
++  async verifyJmapPasswordSignIn(config, info, totp) {
++    const incoming = config.incoming;
++    const loginError = cause =>
++      new Error(lazy.l10n.formatValueSync("cannot-login-error"), { cause });
++    let client, tokens;
++    try {
++      client = await lazy.JmapOAuth.resolveClient(info, {
++        signal: this.signal,
++        existing: info.client ?? undefined,
++      });
++      tokens = await lazy.JmapOAuth.passwordSignIn(info, client, {
++        username: incoming.username,
++        password: incoming.password,
++        totp,
++        signal: this.signal,
++      });
++    } catch (e) {
++      if (this.signal?.aborted || e.name == "AbortError") {
++        throw e;
++      }
++      this._log.info(`JMAP password sign-in failed: ${e.code ?? e}`);
++      if (e.code == "mfaRequired") {
++        throw new Error("A two-factor code is required", {
++          cause: { fluentTitleId: "account-hub-jmap-totp-required" },
++        });
++      }
++      if (e.code == "badCode") {
++        throw new Error("The two-factor code was not accepted", {
++          cause: { fluentTitleId: "account-hub-jmap-totp-invalid" },
++        });
++      }
++      throw loginError(e);
++    }
++    this.signal?.throwIfAborted();
++
++    let session;
++    try {
++      session = await lazy.JmapDiscovery.fetchSessionWithHeaders(
++        incoming.sessionUrl,
++        { Authorization: `Bearer ${tokens.accessToken}` },
++        this.signal
++      );
++    } catch (e) {
++      this._log.info(`JMAP OAuth2 session request failed: ${e}`);
++      if (e.status == 401 || e.status == 403) {
++        throw loginError(e);
++      }
++      throw e;
++    }
++    if (!lazy.JmapDiscovery.hasMailAccount(session)) {
++      throw loginError();
++    }
++
++    info.client = client;
++    info.scopes = tokens.scope || info.scopes;
++    // Store the tokens under the same details CreateInBackend writes as the
++    // server's oauth2.* prefs, so the new account finds them.
++    const module = new lazy.OAuth2Module();
++    if (
++      !module.initFromHostname(
++        incoming.hostname,
++        incoming.username,
++        "jmap",
++        lazy.JmapOAuth.customDetails(lazy.JmapOAuth.prefValues(info, client))
++      )
++    ) {
++      throw loginError();
++    }
++    await lazy.JmapOAuth.storeTokens(module, tokens);
++
++    incoming.jmapOAuth = info;
++    incoming.auth = Ci.nsMsgAuthMethod.OAuth2;
++    incoming.password = "";
++    incoming.jmapCapabilities = Object.keys(session.capabilities);
++    if (config.configureOutgoingFromIncoming()) {
++      config.outgoing.username = incoming.username;
++    }
++    return config;
 +  }
 +
 +  /**
@@ -4001,7 +4327,7 @@ index 6f3bcbfd60c..73635d5434e 100644
        class="account-hub-success-links-title"
        data-l10n-id="account-hub-email-added-success-links-title"
 diff --git a/mail/components/accountcreation/templates/accountHubEmailConfigFoundTemplate.inc.xhtml b/mail/components/accountcreation/templates/accountHubEmailConfigFoundTemplate.inc.xhtml
-index a701917251e..f00530cd54f 100644
+index a701917251e..35c798711af 100644
 --- a/mail/components/accountcreation/templates/accountHubEmailConfigFoundTemplate.inc.xhtml
 +++ b/mail/components/accountcreation/templates/accountHubEmailConfigFoundTemplate.inc.xhtml
 @@ -8,6 +8,19 @@
@@ -4024,6 +4350,35 @@ index a701917251e..f00530cd54f 100644
              <label id="imap" class="config-option">
                <div class="config-title">
                  <input type="radio" name="config-type" value="imap" />
+@@ -217,6 +230,28 @@
+               </div>
+             </div>
+ 
++            <!-- JMAP sign-in method choice -->
++            <fieldset id="jmapSignInChoice" class="jmap-sign-in-choice" hidden="hidden">
++              <legend data-l10n-id="account-hub-jmap-sign-in-legend"></legend>
++              <label class="toggle-container-with-text">
++                <input id="jmapSignInPassword"
++                       type="radio"
++                       name="jmap-sign-in"
++                       value="password"
++                       checked="checked" />
++                <span data-l10n-id="account-hub-jmap-sign-in-password"></span>
++              </label>
++              <label class="toggle-container-with-text">
++                <input id="jmapSignInBrowser"
++                       type="radio"
++                       name="jmap-sign-in"
++                       value="browser" />
++                <span id="jmapSignInBrowserLabel"
++                      data-l10n-id="account-hub-jmap-sign-in-browser"
++                      data-l10n-args='{"provider": ""}'></span>
++              </label>
++            </fieldset>
++
+             <div class="custom-action-container">
+               <button id="editConfiguration"
+                       class="button link-button link-button-sm"
 diff --git a/mail/components/accountcreation/templates/accountHubEmailIncomingFormTemplate.inc.xhtml b/mail/components/accountcreation/templates/accountHubEmailIncomingFormTemplate.inc.xhtml
 index ec6ec53fe5b..f5e5873c8b7 100644
 --- a/mail/components/accountcreation/templates/accountHubEmailIncomingFormTemplate.inc.xhtml
@@ -4037,22 +4392,54 @@ index ec6ec53fe5b..f5e5873c8b7 100644
                <option id="incomingProtocolIMAP"
                        value="1">IMAP</option>
                <option id="incomingProtocolPOP3"
+diff --git a/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml b/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
+index 04ef0ca1cd8..89a219a6ab3 100644
+--- a/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
++++ b/mail/components/accountcreation/templates/accountHubEmailPasswordFormTemplate.inc.xhtml
+@@ -17,6 +17,25 @@
+                data-l10n-attrs="accesskey">
+         </label>
+       </div>
++      <details id="jmapTotpDetails" class="jmap-totp-details" hidden="hidden">
++        <summary data-l10n-id="account-hub-jmap-totp-summary"></summary>
++        <div class="input-control">
++          <input id="jmapTotp"
++                 type="text"
++                 class="input-field"
++                 inputmode="numeric"
++                 autocomplete="one-time-code"
++                 maxlength="8"
++                 pattern="[0-9]*"
++                 aria-describedby="jmapTotpHelp" />
++          <label for="jmapTotp"
++                 data-l10n-id="account-hub-jmap-totp-label">
++          </label>
++          <p id="jmapTotpHelp"
++             class="input-help"
++             data-l10n-id="account-hub-jmap-totp-help"></p>
++        </div>
++      </details>
+       <div class="remember-button-container">
+           <label class="toggle-container-with-text">
+             <input id="rememberPassword"
 diff --git a/mail/components/accountcreation/test/browser/browser.toml b/mail/components/accountcreation/test/browser/browser.toml
-index f1e2afb803b..f367d427bd5 100644
+index f1e2afb803b..226a3aa0ee5 100644
 --- a/mail/components/accountcreation/test/browser/browser.toml
 +++ b/mail/components/accountcreation/test/browser/browser.toml
-@@ -71,3 +71,5 @@ tags = ["oauth"]
+@@ -71,3 +71,7 @@ tags = ["oauth"]
  
  ["browser_verifyConfig.js"]
  tags = ["oauth"]
 +
 +["browser_accountHubEmailJmapEdit.js"]
++
++["browser_accountHubEmailJmapSignIn.js"]
 diff --git a/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js
 new file mode 100644
-index 00000000000..cb5a25ee082
+index 00000000000..f1fc701fac7
 --- /dev/null
 +++ b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapEdit.js
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,241 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -4234,11 +4621,31 @@ index 00000000000..cb5a25ee082
 +  );
 +  Assert.equal(urlInput.value, SESSION_URL, "Should show the session URL");
 +
-+  // Continuing validates the JMAP config directly; there is no outgoing step.
++  // Password sign-in is the default, so the auth method is a password.
++  Assert.equal(
++    incomingForm.querySelector("#incomingAuthMethod").value,
++    String(Ci.nsMsgAuthMethod.passwordCleartext),
++    "Password sign-in should be selected"
++  );
++
++  // Continuing goes straight to the password (there is no outgoing step),
++  // then validates the JMAP config.
 +  await TestUtils.waitForCondition(
 +    () => !footerForward.disabled,
 +    "Continue should be enabled for the JMAP config"
 +  );
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  const passwordForm = dialog.querySelector("email-password-form");
++  await TestUtils.waitForCondition(
++    () => passwordForm && BrowserTestUtils.isVisible(passwordForm),
++    "The password step should be shown"
++  );
++  Assert.ok(
++    !verifyConfigStub.called,
++    "Nothing should be validated before the password is known"
++  );
++  await typeInto(passwordForm.querySelector("#password"), "secret");
 +  footerForward.scrollIntoView({ block: "center" });
 +  EventUtils.synthesizeMouseAtCenter(footerForward, {});
 +  await TestUtils.waitForCondition(
@@ -4262,12 +4669,325 @@ index 00000000000..cb5a25ee082
 +    !outgoingForm || BrowserTestUtils.isHidden(outgoingForm),
 +    "The outgoing config form should not be shown for JMAP"
 +  );
++  Assert.equal(
++    verifyConfigStub.firstCall.args[0].incoming.jmapSignIn,
++    "password",
++    "The validated config should use password sign-in"
++  );
 +  Assert.ok(
-+    BrowserTestUtils.isVisible(incomingForm),
-+    "Should stay on the incoming config form after the failed validation"
++    BrowserTestUtils.isVisible(passwordForm),
++    "Should stay on the password step after the failed validation"
 +  );
 +
-+  await closeDialog(dialog, incomingForm);
++  await closeDialog(dialog, passwordForm);
++});
+diff --git a/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapSignIn.js b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapSignIn.js
+new file mode 100644
+index 00000000000..95206d001cb
+--- /dev/null
++++ b/mail/components/accountcreation/test/browser/browser_accountHubEmailJmapSignIn.js
+@@ -0,0 +1,302 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Tests the JMAP sign-in method choice: password (default, with an optional
++ * two-factor code) or sign-in in the browser.
++ */
++
++"use strict";
++
++const { sinon } = ChromeUtils.importESModule(
++  "resource://testing-common/Sinon.sys.mjs"
++);
++const { FindConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/FindConfig.sys.mjs"
++);
++const { AccountConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/AccountConfig.sys.mjs"
++);
++const { ConfigVerifier } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/ConfigVerifier.sys.mjs"
++);
++
++const SESSION_URL = "https://mail.example.com/jmap/session";
++const EMAIL = "john.doe@example.com";
++
++let parallelAutoDiscoveryStub;
++let verifyConfigStub;
++
++add_setup(async () => {
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      ["mail.jmap.enabled", true],
++      ["mail.accounthub.manualconfig.enabled", true],
++    ],
++  });
++  parallelAutoDiscoveryStub = sinon.stub(FindConfig, "parallelAutoDiscovery");
++  verifyConfigStub = sinon
++    .stub(ConfigVerifier.prototype, "verifyConfig")
++    .rejects(new Error("Stubbed verification failure"));
++  registerCleanupFunction(async () => {
++    parallelAutoDiscoveryStub.restore();
++    verifyConfigStub.restore();
++    await SpecialPowers.popPrefEnv();
++  });
++});
++
++function createJmapConfig() {
++  const config = new AccountConfig();
++  config.source = AccountConfig.kSourceXML;
++  config.subSource = "xml-from-isp-https";
++  config.incoming.type = "jmap";
++  config.incoming.hostname = "mail.example.com";
++  config.incoming.port = 443;
++  config.incoming.socketType = Ci.nsMsgSocketType.SSL;
++  config.incoming.username = EMAIL;
++  config.incoming.auth = Ci.nsMsgAuthMethod.OAuth2;
++  config.incoming.sessionUrl = SESSION_URL;
++  config.incoming.jmapCapabilities = [
++    "urn:ietf:params:jmap:core",
++    "urn:ietf:params:jmap:mail",
++    "urn:ietf:params:jmap:submission",
++  ];
++  config.incoming.jmapOAuth = {
++    issuer: "https://mail.example.com",
++    authorizationEndpoint: "https://mail.example.com/authorize",
++    tokenEndpoint: "https://mail.example.com/token",
++    scopes: "urn:ietf:params:jmap:core urn:ietf:params:jmap:mail",
++    displayName: "Example",
++  };
++  return config;
++}
++
++async function openAccountHubDialog() {
++  await window.openAccountHub("MAIL");
++  await BrowserTestUtils.waitForMutationCondition(
++    document.body,
++    { childList: true, subtree: true },
++    () => document.querySelector("account-hub-container")
++  );
++  const hub = document.querySelector("account-hub-container");
++  await BrowserTestUtils.waitForMutationCondition(
++    hub,
++    { childList: true },
++    () => !!hub.shadowRoot.querySelector(".account-hub-dialog")
++  );
++  const dialog = hub.shadowRoot.querySelector(".account-hub-dialog");
++  await TestUtils.waitForCondition(
++    () => dialog.open && dialog.querySelector("email-auto-form"),
++    "The account hub email form should be available"
++  );
++  await TestUtils.waitForCondition(
++    () => BrowserTestUtils.isVisible(dialog.querySelector("email-auto-form")),
++    "The email auto form should be visible"
++  );
++  return dialog;
++}
++
++async function typeInto(input, text) {
++  input.value = "";
++  input.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(input, {});
++  const inputEvent = BrowserTestUtils.waitForEvent(
++    input,
++    "input",
++    false,
++    event => event.target.value === text
++  );
++  EventUtils.sendString(text, window);
++  await inputEvent;
++}
++
++async function closeDialog(dialog, currentStep) {
++  const closeButton = currentStep.shadowRoot
++    .querySelector("account-hub-header")
++    .shadowRoot.querySelector("#closeButton");
++  const closeEvent = BrowserTestUtils.waitForEvent(dialog, "close");
++  EventUtils.synthesizeMouseAtCenter(closeButton, {});
++  await closeEvent;
++}
++
++/**
++ * Opens the hub, enters the email address and waits for the config found
++ * step with the JMAP config.
++ *
++ * @returns {object} The dialog, config found step and forward button.
++ */
++async function openConfigFound() {
++  const config = createJmapConfig();
++  parallelAutoDiscoveryStub.returns({
++    next() {
++      return Promise.resolve({ value: config, done: true });
++    },
++  });
++
++  const dialog = await openAccountHubDialog();
++  const emailForm = dialog.querySelector("email-auto-form");
++  const footerForward = dialog.querySelector("#emailFooter #forward");
++
++  await typeInto(emailForm.querySelector("#realName"), "John Doe");
++  await typeInto(emailForm.querySelector("#email"), EMAIL);
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++
++  const configFound = dialog.querySelector("email-config-found");
++  await BrowserTestUtils.waitForAttributeRemoval("hidden", configFound);
++  await TestUtils.waitForCondition(
++    () => !footerForward.disabled,
++    "Continue should be enabled"
++  );
++  return { dialog, configFound, footerForward };
++}
++
++/**
++ * Continues from the config found step to the password step.
++ *
++ * @param {HTMLDialogElement} dialog - The account hub dialog.
++ * @param {HTMLButtonElement} footerForward - The continue button.
++ * @returns {HTMLElement} The password step.
++ */
++async function continueToPasswordStep(dialog, footerForward) {
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  const passwordForm = dialog.querySelector("email-password-form");
++  await TestUtils.waitForCondition(
++    () => passwordForm && BrowserTestUtils.isVisible(passwordForm),
++    "The password step should be shown"
++  );
++  return passwordForm;
++}
++
++add_task(async function test_passwordIsDefault() {
++  verifyConfigStub.resetHistory();
++  const { dialog, configFound, footerForward } = await openConfigFound();
++
++  const choice = configFound.querySelector("#jmapSignInChoice");
++  Assert.ok(BrowserTestUtils.isVisible(choice), "The choice should show");
++  Assert.ok(
++    configFound.querySelector("#jmapSignInPassword").checked,
++    "Password should be selected by default"
++  );
++  Assert.ok(
++    !configFound.querySelector("#jmapSignInBrowser").checked,
++    "Browser sign-in should not be selected"
++  );
++  Assert.equal(
++    configFound.captureState().incoming.jmapSignIn,
++    "password",
++    "The captured config should use the password"
++  );
++
++  const passwordForm = await continueToPasswordStep(dialog, footerForward);
++  Assert.ok(
++    !verifyConfigStub.called,
++    "Continue must not start a (browser) sign-in before the password"
++  );
++
++  const details = passwordForm.querySelector("#jmapTotpDetails");
++  Assert.ok(
++    BrowserTestUtils.isVisible(details),
++    "The two-factor disclosure should show for JMAP"
++  );
++  Assert.ok(!details.open, "The two-factor disclosure should be collapsed");
++  const totp = passwordForm.querySelector("#jmapTotp");
++  Assert.equal(totp.getAttribute("inputmode"), "numeric");
++  Assert.equal(totp.getAttribute("autocomplete"), "one-time-code");
++  Assert.equal(totp.maxLength, 8);
++
++  await typeInto(passwordForm.querySelector("#password"), "secret");
++  details.open = true;
++  await typeInto(totp, "123456");
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  await TestUtils.waitForCondition(
++    () => verifyConfigStub.called,
++    "The config should be verified"
++  );
++  const verified = verifyConfigStub.firstCall.args[0];
++  Assert.equal(verified.incoming.jmapSignIn, "password");
++  Assert.equal(
++    verified.incoming.auth,
++    Ci.nsMsgAuthMethod.passwordCleartext,
++    "Password sign-in uses the password auth method"
++  );
++  Assert.equal(verified.incoming.jmapTotp, "123456", "Should pass the code");
++  Assert.equal(verified.incoming.password, "secret");
++  await TestUtils.waitForTick();
++
++  await closeDialog(dialog, passwordForm);
++});
++
++add_task(async function test_browserChoice() {
++  verifyConfigStub.resetHistory();
++  const { dialog, configFound, footerForward } = await openConfigFound();
++
++  const browserRadio = configFound.querySelector("#jmapSignInBrowser");
++  browserRadio.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(browserRadio, {});
++  await TestUtils.waitForCondition(
++    () => browserRadio.checked,
++    "Browser sign-in should be selected"
++  );
++  Assert.equal(
++    configFound.captureState().incoming.jmapSignIn,
++    "browser",
++    "The captured config should use the browser"
++  );
++
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  await TestUtils.waitForCondition(
++    () => verifyConfigStub.called,
++    "Browser sign-in should verify right away"
++  );
++  const verified = verifyConfigStub.firstCall.args[0];
++  Assert.equal(verified.incoming.jmapSignIn, "browser");
++  Assert.equal(verified.incoming.auth, Ci.nsMsgAuthMethod.OAuth2);
++  await TestUtils.waitForTick();
++
++  Assert.ok(
++    BrowserTestUtils.isVisible(configFound),
++    "Should stay on the config found step after the failed sign-in"
++  );
++  await closeDialog(dialog, configFound);
++});
++
++add_task(async function test_totpRequiredOpensField() {
++  verifyConfigStub.resetHistory();
++  verifyConfigStub.rejects(
++    new Error("Two-factor code required", {
++      cause: { fluentTitleId: "account-hub-jmap-totp-required" },
++    })
++  );
++  const { dialog, footerForward } = await openConfigFound();
++  const passwordForm = await continueToPasswordStep(dialog, footerForward);
++  const details = passwordForm.querySelector("#jmapTotpDetails");
++  Assert.ok(!details.open, "The two-factor disclosure starts collapsed");
++
++  await typeInto(passwordForm.querySelector("#password"), "secret");
++  footerForward.scrollIntoView({ block: "center" });
++  EventUtils.synthesizeMouseAtCenter(footerForward, {});
++  await TestUtils.waitForCondition(
++    () => details.open,
++    "The two-factor disclosure should open"
++  );
++  Assert.ok(
++    BrowserTestUtils.isVisible(passwordForm),
++    "Should stay on the password step"
++  );
++  Assert.equal(
++    verifyConfigStub.firstCall.args[0].incoming.jmapTotp,
++    null,
++    "No code was entered yet"
++  );
++  await TestUtils.waitForCondition(
++    () => passwordForm.querySelector("#jmapTotp").matches(":focus"),
++    "The code input should be focused"
++  );
++
++  verifyConfigStub.rejects(new Error("Stubbed verification failure"));
++  await closeDialog(dialog, passwordForm);
 +});
 diff --git a/mail/components/accountcreation/test/xpcshell/test_jmapDiscovery.js b/mail/components/accountcreation/test/xpcshell/test_jmapDiscovery.js
 new file mode 100644
@@ -4711,10 +5431,10 @@ index 00000000000..79a1da08783
 +});
 diff --git a/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js b/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js
 new file mode 100644
-index 00000000000..8d8048c8b0e
+index 00000000000..02556edd7c3
 --- /dev/null
 +++ b/mail/components/accountcreation/test/xpcshell/test_jmapOAuthVerify.js
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,341 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -4897,6 +5617,165 @@ index 00000000000..8d8048c8b0e
 +  );
 +  sessionHasMail = true;
 +});
++
++// Password (+ TOTP) sign-in through a fake of Stalwart's login API.
++
++const PASSWORD = "secret";
++const TOTP = "123456";
++let requireTotp = false;
++const pwCodes = new Map();
++let pwHandlersRegistered = false;
++
++function readBody(request) {
++  const stream = request.bodyInputStream;
++  return NetUtil.readInputStreamToString(stream, stream.available(), {
++    charset: "UTF-8",
++  });
++}
++
++function writeJson(response, json, status = 200) {
++  response.setStatusLine("1.1", status, status == 200 ? "OK" : "Error");
++  response.setHeader("Content-Type", "application/json", false);
++  response.write(JSON.stringify(json));
++}
++
++var { NetUtil } = ChromeUtils.importESModule(
++  "resource://gre/modules/NetUtil.sys.mjs"
++);
++
++function registerPasswordHandlers() {
++  if (pwHandlersRegistered) {
++    return;
++  }
++  pwHandlersRegistered = true;
++  const httpServer = OAuth2TestUtils._oAuth2Server?.httpServer ?? null;
++  Assert.ok(httpServer, "the test OAuth2 server is running");
++  httpServer.registerPathHandler("/api/auth", (request, response) => {
++    const body = JSON.parse(readBody(request));
++    if (body.accountName != USERNAME || body.accountSecret != PASSWORD) {
++      writeJson(response, { type: "failure" });
++      return;
++    }
++    if (requireTotp && !body.mfaToken) {
++      writeJson(response, { type: "mfaRequired" });
++      return;
++    }
++    if (requireTotp && body.mfaToken != TOTP) {
++      writeJson(response, { type: "failure" });
++      return;
++    }
++    const query = new URLSearchParams(body.query);
++    const code = `pwcode${pwCodes.size + 1}`;
++    pwCodes.set(code, query.get("client_id"));
++    const location = new URL("http://127.0.0.1/");
++    location.searchParams.set("code", code);
++    location.searchParams.set("state", query.get("state"));
++    location.searchParams.set("iss", ISSUER);
++    writeJson(response, { type: "authenticated", location: location.href });
++  });
++  httpServer.registerPathHandler("/pwtoken", (request, response) => {
++    const form = new URLSearchParams(readBody(request));
++    if (
++      form.get("grant_type") != "authorization_code" ||
++      pwCodes.get(form.get("code")) != form.get("client_id") ||
++      !form.get("code_verifier")
++    ) {
++      writeJson(response, { error: "invalid_grant" }, 400);
++      return;
++    }
++    writeJson(response, {
++      access_token: "access_token",
++      refresh_token: "pw_refresh_token",
++      expires_in: 3600,
++      scope: form.has("scope") ? form.get("scope") : undefined,
++    });
++  });
++}
++
++async function makePasswordConfig(totp = null) {
++  registerPasswordHandlers();
++  const config = await makeConfig();
++  const incoming = config.incoming;
++  incoming.auth = Ci.nsMsgAuthMethod.passwordCleartext;
++  incoming.password = PASSWORD;
++  incoming.jmapSignIn = "password";
++  incoming.jmapTotp = totp;
++  incoming.jmapOAuth.tokenEndpoint = `${ISSUER}/pwtoken`;
++  return config;
++}
++
++async function verifyPassword(config) {
++  OAuth2TestUtils.forgetObjects();
++  await Services.logins.removeAllLoginsAsync();
++  const verifier = new ConfigVerifier(null, new AbortController().signal);
++  return verifier.verifyJmapConfig(config);
++}
++
++async function storedPwTokens() {
++  const logins = await Services.logins.searchLoginsAsync({
++    origin: `oauth://${HOSTNAME}`,
++  });
++  return logins.filter(l => l.username == USERNAME).map(l => l.password);
++}
++
++add_task(async function test_password_signin_without_totp() {
++  requireTotp = false;
++  const before = sessionAuthHeaders.length;
++  const config = await verifyPassword(await makePasswordConfig());
++  const incoming = config.incoming;
++  Assert.equal(incoming.auth, Ci.nsMsgAuthMethod.OAuth2, "switched to OAuth2");
++  Assert.ok(!incoming.password, "the password is not kept");
++  Assert.equal(incoming.jmapOAuth.client?.clientId, "test_client_id");
++  Assert.deepEqual(incoming.jmapCapabilities, [MAIL]);
++  const headers = sessionAuthHeaders.slice(before);
++  Assert.ok(headers[0].startsWith("Basic "), "Basic was tried first");
++  Assert.equal(headers.at(-1), "Bearer access_token");
++  Assert.deepEqual(await storedPwTokens(), ["pw_refresh_token"]);
++});
++
++add_task(async function test_password_signin_totp_required() {
++  requireTotp = true;
++  await Assert.rejects(
++    verifyPassword(await makePasswordConfig()),
++    e => e.cause?.fluentTitleId == "account-hub-jmap-totp-required",
++    "a missing TOTP code asks for one"
++  );
++});
++
++add_task(async function test_password_signin_totp_invalid() {
++  requireTotp = true;
++  await Assert.rejects(
++    verifyPassword(await makePasswordConfig("000000")),
++    e => e.cause?.fluentTitleId == "account-hub-jmap-totp-invalid",
++    "a wrong TOTP code is reported"
++  );
++});
++
++add_task(async function test_password_signin_with_totp() {
++  requireTotp = true;
++  const before = sessionAuthHeaders.length;
++  const config = await verifyPassword(await makePasswordConfig(TOTP));
++  Assert.equal(config.incoming.auth, Ci.nsMsgAuthMethod.OAuth2);
++  Assert.deepEqual(
++    sessionAuthHeaders.slice(before),
++    ["Bearer access_token"],
++    "with a TOTP code, Basic is skipped"
++  );
++  Assert.deepEqual(await storedPwTokens(), ["pw_refresh_token"]);
++  requireTotp = false;
++});
++
++add_task(async function test_password_signin_wrong_password() {
++  requireTotp = false;
++  const config = await makePasswordConfig();
++  config.incoming.password = "wrong";
++  await Assert.rejects(
++    verifyPassword(config),
++    e => !e.cause?.fluentTitleId,
++    "a wrong password is a plain login error"
++  );
++  Assert.equal(config.incoming.auth, Ci.nsMsgAuthMethod.passwordCleartext);
++});
 diff --git a/mail/components/accountcreation/test/xpcshell/xpcshell.toml b/mail/components/accountcreation/test/xpcshell/xpcshell.toml
 index ea215f03cf8..70400fee0e0 100644
 --- a/mail/components/accountcreation/test/xpcshell/xpcshell.toml
@@ -5011,7 +5890,7 @@ index ea215f03cf8..70400fee0e0 100644
 +
 +["test_sanitizer.js"]
 diff --git a/mail/components/accountcreation/views/email.mjs b/mail/components/accountcreation/views/email.mjs
-index 806e0d75826..377d0914c23 100644
+index 806e0d75826..4a84ffdedd5 100644
 --- a/mail/components/accountcreation/views/email.mjs
 +++ b/mail/components/accountcreation/views/email.mjs
 @@ -815,8 +815,13 @@ class AccountHubEmail extends HTMLElement {
@@ -5050,7 +5929,22 @@ index 806e0d75826..377d0914c23 100644
            if (!(await this.#validateAccountConfig(stateData.config))) {
              break;
            }
-@@ -1805,17 +1814,37 @@ class AccountHubEmail extends HTMLElement {
+@@ -1277,12 +1286,9 @@ class AccountHubEmail extends HTMLElement {
+           stateData.password
+         );
+         this.#currentConfig.rememberPassword = stateData.rememberPassword;
+-
+-        if (!(await this.#createAccount("account-hub-creating-account"))) {
+-          // Didn't complete account creation.
+-          break;
++        if (await this.#createAccountFromPasswordStep(stateData.totp)) {
++          await this.#fetchSyncAccounts();
+         }
+-        await this.#fetchSyncAccounts();
+ 
+         break;
+       case "emailSyncAccountsSubview":
+@@ -1805,17 +1811,37 @@ class AccountHubEmail extends HTMLElement {
    async #validateAccountConfig(accountConfig) {
      this.#currentConfig = this.#fillAccountConfig(accountConfig);
  
@@ -5096,12 +5990,21 @@ index 806e0d75826..377d0914c23 100644
        try {
          const result = await this.#createAccount(
            "account-hub-creating-account"
-@@ -1835,7 +1864,15 @@ class AccountHubEmail extends HTMLElement {
+@@ -1834,8 +1860,24 @@ class AccountHubEmail extends HTMLElement {
+     // previous step.
      this.#states[this.#currentState].previousStep = currentState;
      this.#currentSubview.setState();
++    // Password sign-in to a JMAP server offering OAuth can need a two-factor
++    // code.
++    this.#currentSubview.setTotpAvailable?.(
++      this.#currentConfig.isJmapConfig() &&
++        this.#currentConfig.incoming.jmapSignIn != "browser"
++    );
  
 -    if (creationError) {
-+    if (
++    if (this.#handleJmapTotpError(creationError)) {
++      // Notification already shown.
++    } else if (
 +      creationError?.cause?.fluentTitleId ==
 +      "account-hub-jmap-oauth-unavailable"
 +    ) {
@@ -5113,12 +6016,97 @@ index 806e0d75826..377d0914c23 100644
        this.#currentSubview.showNotification({
          title: creationError.title || creationError.message,
          description: creationError.text,
-@@ -2132,6 +2169,10 @@ class AccountHubEmail extends HTMLElement {
+@@ -1851,6 +1893,58 @@ class AccountHubEmail extends HTMLElement {
+     return true;
+   }
+ 
++  /**
++   * Create the account after the password step. For JMAP, the optional
++   * two-factor code is used only while verifying; a successful token sign-in
++   * clears the password, so rememberPassword then has no effect.
++   *
++   * @param {?string} totp - The two-factor code from the password step.
++   * @returns {Promise<boolean>} True if the account was created.
++   */
++  async #createAccountFromPasswordStep(totp) {
++    const isJmap = this.#currentConfig.isJmapConfig();
++    if (isJmap) {
++      this.#currentConfig.incoming.jmapTotp = totp || null;
++    }
++    try {
++      return !!(await this.#createAccount("account-hub-creating-account"));
++    } catch (error) {
++      if (this.#handleJmapTotpError(error)) {
++        return false;
++      }
++      throw error;
++    } finally {
++      if (isJmap) {
++        this.#currentConfig.incoming.jmapTotp = null;
++      }
++    }
++  }
++
++  /**
++   * If the error says a JMAP two-factor code is needed or was rejected, expand
++   * and focus the code input of the password step and say so.
++   *
++   * @param {?Error} error
++   * @returns {boolean} True if the error was handled.
++   */
++  #handleJmapTotpError(error) {
++    const fluentTitleId = error?.cause?.fluentTitleId;
++    if (
++      this.#currentState != "emailPasswordSubview" ||
++      !this.#currentConfig?.isJmapConfig() ||
++      (fluentTitleId != "account-hub-jmap-totp-required" &&
++        fluentTitleId != "account-hub-jmap-totp-invalid")
++    ) {
++      return false;
++    }
++    this.#currentSubview.showTotp();
++    this.#currentSubview.showNotification({
++      fluentTitleId,
++      type: "warning",
++    });
++    return true;
++  }
++
+   /**
+    * Create account and advance to sync accounts step if successful.
+    *
+@@ -1885,6 +1979,18 @@ class AccountHubEmail extends HTMLElement {
+    * Fetch and show calendars and address books for the account.
+    */
+   async #fetchSyncAccounts() {
++    // A JMAP account already set up its own address books and calendars
++    // (contacts and calendars over JMAP); offering CardDAV/CalDAV ones here
++    // would only add duplicates.
++    if (this.#currentConfig?.isJmapConfig()) {
++      await this.#initUI("emailAddedSuccessSubview");
++      this.#currentSubview.setState(this.#account);
++      this.#currentSubview.showNotification({
++        fluentTitleId: "account-hub-email-added-success",
++        type: "success",
++      });
++      return;
++    }
+     try {
+       this.#startLoading("account-hub-finding-sync-accounts");
+ 
+@@ -2132,6 +2238,17 @@ class AccountHubEmail extends HTMLElement {
        this.#configVerifier = null;
        Glean.mail.failedEmailAccountSetup[telemetryKey].add(1);
  
-+      if (error.cause?.fluentTitleId == "account-hub-jmap-oauth-unavailable") {
-+        // Handled by #validateAccountConfig (falls back to the password).
++      if (
++        [
++          "account-hub-jmap-oauth-unavailable",
++          "account-hub-jmap-totp-required",
++          "account-hub-jmap-totp-invalid",
++        ].includes(error.cause?.fluentTitleId)
++      ) {
++        // Handled by #validateAccountConfig and the password step (password
++        // fallback, two-factor code input).
 +        throw error;
 +      }
        throw new Error(error.message, {
@@ -11173,10 +12161,10 @@ index 566bbee8db5..f96601fd3db 100644
      "prompts",
      "search",
 diff --git a/mail/locales/en-US/messenger/accountManager.ftl b/mail/locales/en-US/messenger/accountManager.ftl
-index 2961457d505..53a1ee0e302 100644
+index 2961457d505..862839196c7 100644
 --- a/mail/locales/en-US/messenger/accountManager.ftl
 +++ b/mail/locales/en-US/messenger/accountManager.ftl
-@@ -47,3 +47,30 @@ panel-manage-spam = Manage spam
+@@ -47,3 +47,40 @@ panel-manage-spam = Manage spam
  # Variables:
  # $account (String) - The account name.
  spam-settings-alert-message = Problem detected with the spam settings for { $account }. Would you like to review them before saving the changes?
@@ -11197,6 +12185,16 @@ index 2961457d505..53a1ee0e302 100644
 +jmap-signin-progress = Complete the sign-in in your web browser…
 +jmap-signin-done = Signed in.
 +jmap-signin-cancel-button = Cancel sign-in
++jmap-signin-password-intro = Or sign in with your password. { -brand-short-name } then uses a sign-in token instead of storing the password.
++jmap-signin-password-label = Password:
++jmap-signin-totp-summary = Two-factor code
++jmap-signin-totp-label = One-time code:
++jmap-signin-password-button = Sign in with password
++jmap-signin-password-progress = Signing in…
++jmap-signin-totp-required = Enter the two-factor code from your authenticator app, then sign in again.
++jmap-signin-totp-invalid = The two-factor code was not accepted. Check the code and try again.
++jmap-signin-password-failure = The password was not accepted.
++jmap-signin-password-unavailable = Password sign-in is not available on this server.
 +jmap-signin-cancelled = Sign-in was cancelled. The previous sign-in method is still used.
 +jmap-signin-signing-out = Switching to password sign-in…
 +jmap-signin-signed-out = Password sign-in is now used. You may be asked for your password.
@@ -11208,10 +12206,10 @@ index 2961457d505..53a1ee0e302 100644
 +jmap-signin-setup-note = Leave the client secret empty and allow the authorization code and refresh token grants.
 +jmap-signin-copy = Copy
 diff --git a/mail/locales/en-US/messenger/accountcreation/accountHub.ftl b/mail/locales/en-US/messenger/accountcreation/accountHub.ftl
-index 28bfa951b3f..020e3f47033 100644
+index 28bfa951b3f..b4960f4de0f 100644
 --- a/mail/locales/en-US/messenger/accountcreation/accountHub.ftl
 +++ b/mail/locales/en-US/messenger/accountcreation/accountHub.ftl
-@@ -597,3 +597,21 @@ account-hub-oauth-unsupported-description = { -brand-short-name } can’t automa
+@@ -597,3 +597,34 @@ account-hub-oauth-unsupported-description = { -brand-short-name } can’t automa
  account-hub-username-help-text = Often your full email address
  
  account-hub-port-help-text = If left blank, { -brand-short-name } will attempt to discover the port.
@@ -11233,6 +12231,19 @@ index 28bfa951b3f..020e3f47033 100644
 +#   $provider (String) - The name of the server software or host offering the sign-in (e.g. "Stalwart").
 +account-hub-result-jmap-oauth = Sign in with { $provider }
 +account-hub-jmap-oauth-unavailable = Signing in through the browser is not available for this server. Please enter your password instead.
++
++## JMAP sign-in method
++
++account-hub-jmap-sign-in-legend = How do you want to sign in?
++account-hub-jmap-sign-in-password = Password
++# Variables:
++#   $provider (String) - The name of the server software or host offering the sign-in (e.g. "Stalwart").
++account-hub-jmap-sign-in-browser = Sign in with { $provider } in your browser (SSO)
++account-hub-jmap-totp-summary = Two-factor code
++account-hub-jmap-totp-label = One-time code from your authenticator app
++account-hub-jmap-totp-help = Only needed if two-factor authentication is turned on for your account.
++account-hub-jmap-totp-required = Enter your two-factor code
++account-hub-jmap-totp-invalid = The two-factor code was not accepted
 diff --git a/mail/locales/en-US/messenger/jmapFiles.ftl b/mail/locales/en-US/messenger/jmapFiles.ftl
 new file mode 100644
 index 00000000000..116756319f0
@@ -12946,10 +13957,10 @@ index 8d9ad0e4e54..afcc5bab878 100644
            // EWS looks like a special case here, but really it's just that
 diff --git a/mailnews/base/prefs/content/am-jmap.js b/mailnews/base/prefs/content/am-jmap.js
 new file mode 100644
-index 00000000000..f905e84f904
+index 00000000000..f56b5f068f3
 --- /dev/null
 +++ b/mailnews/base/prefs/content/am-jmap.js
-@@ -0,0 +1,674 @@
+@@ -0,0 +1,758 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13172,6 +14183,8 @@ index 00000000000..f905e84f904
 +  );
 +  document.getElementById("jmapSignInButton").disabled =
 +    gSignInBusy || !gOAuthAvailable;
++  document.getElementById("jmapPasswordSignInButton").disabled =
++    gSignInBusy || !gOAuthAvailable;
 +  document.getElementById("jmapSignOutButton").disabled =
 +    gSignInBusy || !oauth;
 +  document.getElementById("jmapSignInUnavailable").hidden =
@@ -13220,8 +14233,10 @@ index 00000000000..f905e84f904
 + * @param {string} progressId - l10n id shown while running.
 + * @param {string} doneId - l10n id shown on success.
 + * @param {Function} fn - Async operation.
++ * @param {Function} [onError] - Called with the error; returns true if it
++ *   showed its own message.
 + */
-+async function runSignInOperation(progressId, doneId, fn) {
++async function runSignInOperation(progressId, doneId, fn, onError) {
 +  gSignInBusy = true;
 +  updateSignInUI();
 +  setStatus("jmapSignInStatus", progressId);
@@ -13232,6 +14247,8 @@ index 00000000000..f905e84f904
 +  } catch (e) {
 +    if (e?.name == "AbortError") {
 +      setStatus("jmapSignInStatus", "jmap-signin-cancelled");
++    } else if (onError?.(e)) {
++      // Handled.
 +    } else {
 +      setErrorStatus("jmapSignInStatus", e);
 +    }
@@ -13280,6 +14297,81 @@ index 00000000000..f905e84f904
 +    clearTimeout(timer);
 +    gSignInAbort = null;
 +    document.getElementById("jmapSignInCancelButton").hidden = true;
++  }
++}
++
++// Messages for JmapSignInError codes.
++const PASSWORD_SIGN_IN_ERRORS = {
++  mfaRequired: "jmap-signin-totp-required",
++  badCode: "jmap-signin-totp-invalid",
++  failure: "jmap-signin-password-failure",
++  unavailable: "jmap-signin-password-unavailable",
++};
++
++/**
++ * Sign in with the password (and optional two-factor code) through the
++ * server's own login API, without a browser.
++ *
++ * @param {Event} [event]
++ */
++async function signInWithPassword(event) {
++  event?.preventDefault();
++  if (gSignInBusy) {
++    return;
++  }
++  const passwordInput = document.getElementById("jmapSignInPassword");
++  const totpInput = document.getElementById("jmapSignInTotp");
++  const totpDetails = document.getElementById("jmapSignInTotpDetails");
++  const password = passwordInput.value;
++  if (!password) {
++    passwordInput.focus();
++    return;
++  }
++  const totp = (totpDetails.open && totpInput.value.trim()) || null;
++
++  gSignInAbort = new AbortController();
++  const timer = setTimeout(() => gSignInAbort?.abort(), SIGN_IN_TIMEOUT_MS);
++  let focusTotp = false;
++  try {
++    await runSignInOperation(
++      "jmap-signin-password-progress",
++      "jmap-signin-done",
++      async () => {
++        await getJmapOAuth().signInWithPassword(gServer, {
++          password,
++          totp,
++          signal: gSignInAbort.signal,
++        });
++        // Signed in: don't keep the password in the page any longer. On
++        // failure it stays, so a requested code can be added without
++        // typing the password again.
++        passwordInput.value = "";
++        totpInput.value = "";
++        totpDetails.open = false;
++      },
++      e => {
++        const l10nId = PASSWORD_SIGN_IN_ERRORS[e?.code];
++        if (!l10nId) {
++          return false;
++        }
++        console.warn(`JMAP: password sign-in failed: ${e.code}`);
++        setStatus("jmapSignInStatus", l10nId, undefined, true);
++        if (e.code == "mfaRequired" || e.code == "badCode") {
++          focusTotp = true;
++        }
++        return true;
++      }
++    );
++  } finally {
++    clearTimeout(timer);
++    gSignInAbort = null;
++  }
++  if (focusTotp) {
++    totpDetails.open = true;
++    totpInput.select();
++    totpInput.focus();
++  } else if (!passwordInput.disabled) {
++    passwordInput.focus();
 +  }
 +}
 +
@@ -13594,6 +14686,9 @@ index 00000000000..f905e84f904
 +window.addEventListener("load", () => {
 +  document.getElementById("jmapSignInButton").addEventListener("click", signIn);
 +  document
++    .getElementById("jmapPasswordSignInForm")
++    .addEventListener("submit", signInWithPassword);
++  document
 +    .getElementById("jmapSignInCancelButton")
 +    .addEventListener("click", cancelSignIn);
 +  document
@@ -13626,10 +14721,10 @@ index 00000000000..f905e84f904
 +});
 diff --git a/mailnews/base/prefs/content/am-jmap.xhtml b/mailnews/base/prefs/content/am-jmap.xhtml
 new file mode 100644
-index 00000000000..a77aca33475
+index 00000000000..bea2a1792a0
 --- /dev/null
 +++ b/mailnews/base/prefs/content/am-jmap.xhtml
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,169 @@
 +<?xml version="1.0"?>
 +
 +<!-- This Source Code Form is subject to the terms of the Mozilla Public
@@ -13707,6 +14802,23 @@ index 00000000000..a77aca33475
 +          <span id="jmapSignInStatus" class="status"></span>
 +        </div>
 +        <p id="jmapSignInUnavailable" class="hint" hidden="hidden" data-l10n-id="jmap-signin-unavailable"></p>
++        <form id="jmapPasswordSignInForm">
++          <p class="hint" data-l10n-id="jmap-signin-password-intro"></p>
++          <div class="row">
++            <label for="jmapSignInPassword" data-l10n-id="jmap-signin-password-label"></label>
++            <input id="jmapSignInPassword" type="password" autocomplete="current-password" />
++          </div>
++          <details id="jmapSignInTotpDetails">
++            <summary data-l10n-id="jmap-signin-totp-summary"></summary>
++            <div class="row">
++              <label for="jmapSignInTotp" data-l10n-id="jmap-signin-totp-label"></label>
++              <input id="jmapSignInTotp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" />
++            </div>
++          </details>
++          <div class="row">
++            <button id="jmapPasswordSignInButton" type="submit" data-l10n-id="jmap-signin-password-button"></button>
++          </div>
++        </form>
 +        <details id="jmapOAuthHelp">
 +          <summary data-l10n-id="jmap-signin-setup-summary"></summary>
 +          <p data-l10n-id="jmap-signin-setup-intro"></p>
@@ -19858,10 +20970,10 @@ index 00000000000..335a9f2242f
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs b/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs
 new file mode 100644
-index 00000000000..035614050a6
+index 00000000000..a62adc952ae
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapOAuth.sys.mjs
-@@ -0,0 +1,669 @@
+@@ -0,0 +1,993 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20084,6 +21196,58 @@ index 00000000000..035614050a6
 +  } catch (e) {
 +    log.warn("Could not cancel the pending OAuth2 sign-in", e);
 +  }
++}
++
++/**
++ * A password (+ TOTP) sign-in through the server's login API failed.
++ *
++ * `code` is one of:
++ * - "mfaRequired": a two-factor (TOTP) code is needed.
++ * - "badCode": the TOTP code was not accepted.
++ * - "failure": wrong username or password.
++ * - "unavailable": password sign-in can't be used with this server.
++ */
++export class JmapSignInError extends Error {
++  /**
++   * @param {string} code
++   * @param {string} message
++   * @param {object} [options] - Error options, e.g. `{ cause }`.
++   */
++  constructor(code, message, options) {
++    super(message, options);
++    this.name = "JmapSignInError";
++    this.code = code;
++  }
++}
++
++/**
++ * @param {ArrayBuffer|Uint8Array} bytes
++ * @returns {string} Unpadded base64url.
++ */
++function base64url(bytes) {
++  return ChromeUtils.base64URLEncode(
++    bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
++    { pad: false }
++  );
++}
++
++/**
++ * @param {number} length
++ * @returns {string} base64url of `length` random bytes.
++ */
++function randomToken(length) {
++  return base64url(crypto.getRandomValues(new Uint8Array(length)));
++}
++
++/**
++ * Compare two issuer identifiers, ignoring a trailing slash.
++ *
++ * @param {string} a
++ * @param {string} b
++ * @returns {boolean}
++ */
++function sameIssuer(a, b) {
++  return a.replace(/\/$/, "") == b.replace(/\/$/, "");
 +}
 +
 +export const JmapOAuth = {
@@ -20404,37 +21568,7 @@ index 00000000000..035614050a6
 +   * @throws {Error} If the server does not support OAuth sign-in.
 +   */
 +  async setupServer(server, { signal } = {}) {
-+    const sessionUrl = server.getStringValue("jmap_session_url");
-+    if (!sessionUrl) {
-+      throw new Error("No JMAP session URL configured");
-+    }
-+    let session = null;
-+    try {
-+      const response = await fetch(sessionUrl, {
-+        headers: { Accept: "application/json" },
-+        signal,
-+      });
-+      if (response.ok) {
-+        session = await response.json();
-+      }
-+    } catch (e) {
-+      rethrowAbort(e, signal);
-+    }
-+    const info = await this.discover(sessionUrl, { signal, session });
-+    if (!info) {
-+      throw new Error("This server does not support OAuth sign-in");
-+    }
-+    const branch = Services.prefs.getBranch(`mail.server.${server.key}.`);
-+    const existingId = branch.getStringPref("oauth2.clientId", "");
-+    const client = await this.resolveClient(info, {
-+      signal,
-+      existing: existingId
-+        ? {
-+            clientId: existingId,
-+            clientSecret: branch.getStringPref("oauth2.clientSecret", ""),
-+          }
-+        : null,
-+    });
++    const { info, client } = await this._discoverForServer(server, signal);
 +    const previousAuthMethod = server.authMethod;
 +    this.writeServerPrefs(server, this.prefValues(info, client));
 +    server.authMethod = Ci.nsMsgAuthMethod.OAuth2;
@@ -20467,6 +21601,308 @@ index 00000000000..035614050a6
 +      if (onAbort) {
 +        signal.removeEventListener("abort", onAbort);
 +      }
++      lazy.JmapAccountRegistry.forget(server.key);
++    }
++    return info;
++  },
++
++  /**
++   * Discover the OAuth details of an existing server and resolve its client,
++   * reusing a client ID already stored in its prefs.
++   *
++   * @param {nsIMsgIncomingServer} server
++   * @param {?AbortSignal} signal
++   * @returns {Promise<{info: OAuthInfo, client: OAuthClient}>}
++   * @throws {Error} If the server does not support OAuth sign-in.
++   */
++  async _discoverForServer(server, signal) {
++    const sessionUrl = server.getStringValue("jmap_session_url");
++    if (!sessionUrl) {
++      throw new Error("No JMAP session URL configured");
++    }
++    let session = null;
++    try {
++      const response = await fetch(sessionUrl, {
++        headers: { Accept: "application/json" },
++        signal,
++      });
++      if (response.ok) {
++        session = await response.json();
++      }
++    } catch (e) {
++      rethrowAbort(e, signal);
++    }
++    const info = await this.discover(sessionUrl, { signal, session });
++    if (!info) {
++      throw new Error("This server does not support OAuth sign-in");
++    }
++    const branch = Services.prefs.getBranch(`mail.server.${server.key}.`);
++    const existingId = branch.getStringPref("oauth2.clientId", "");
++    const client = await this.resolveClient(info, {
++      signal,
++      existing: existingId
++        ? {
++            clientId: existingId,
++            clientSecret: branch.getStringPref("oauth2.clientSecret", ""),
++          }
++        : null,
++    });
++    return { info, client };
++  },
++
++  /**
++   * Sign in with a password (and optionally a TOTP code) through Stalwart's
++   * login API, without a browser, and exchange the code for tokens.
++   *
++   * @param {OAuthInfo} info
++   * @param {OAuthClient} client
++   * @param {object} options
++   * @param {string} options.username
++   * @param {string} options.password
++   * @param {?string} [options.totp] - The current two-factor code.
++   * @param {AbortSignal} [options.signal]
++   * @param {Function} [options.fetch] - Replacement for globalThis.fetch.
++   * @returns {Promise<{accessToken: string, refreshToken: ?string,
++   *   expiresIn: ?number, scope: string}>}
++   * @throws {JmapSignInError}
++   * @throws {DOMException} AbortError when aborted.
++   */
++  async passwordSignIn(
++    info,
++    client,
++    { username, password, totp, signal, fetch } = {}
++  ) {
++    const fetchFn = fetch ?? globalThis.fetch;
++    totp = totp ? `${totp}`.replace(/\s+/g, "") : null;
++    const verifier = randomToken(32);
++    const challenge = base64url(
++      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
++    );
++    const state = randomToken(16);
++    const query = new URLSearchParams({
++      response_type: "code",
++      client_id: client.clientId,
++      redirect_uri: REDIRECT_URI,
++      scope: info.scopes,
++      state,
++      code_challenge: challenge,
++      code_challenge_method: "S256",
++    }).toString();
++
++    let origin;
++    try {
++      origin = new URL(info.issuer).origin;
++    } catch (e) {
++      throw new JmapSignInError("unavailable", "Invalid issuer", { cause: e });
++    }
++
++    const login = async mfaToken => {
++      const body = {
++        type: "authCode",
++        accountName: username,
++        accountSecret: password,
++        query,
++        consent: true,
++      };
++      if (mfaToken) {
++        body.mfaToken = mfaToken;
++      }
++      let json;
++      try {
++        const response = await fetchFn(`${origin}/api/auth`, {
++          method: "POST",
++          headers: {
++            "Content-Type": "application/json",
++            Accept: "application/json",
++          },
++          body: JSON.stringify(body),
++          credentials: "omit",
++          signal,
++        });
++        json = await response.json();
++      } catch (e) {
++        rethrowAbort(e, signal);
++        throw new JmapSignInError("unavailable", "Login API not usable", {
++          cause: e,
++        });
++      }
++      return json && typeof json == "object" ? json : {};
++    };
++
++    let result = await login(totp);
++    if (totp && result.type == "failure") {
++      // A wrong code may be reported as a plain failure. Retry without it to
++      // tell a wrong code (password accepted, code needed) from a wrong
++      // password.
++      const retry = await login(null);
++      if (retry.type == "mfaRequired") {
++        throw new JmapSignInError("badCode", "Two-factor code rejected");
++      }
++      result = retry;
++    }
++    switch (result.type) {
++      case "authenticated":
++        break;
++      case "mfaRequired":
++        if (totp) {
++          throw new JmapSignInError("badCode", "Two-factor code rejected");
++        }
++        throw new JmapSignInError("mfaRequired", "Two-factor code required");
++      case "failure":
++        throw new JmapSignInError("failure", "Wrong username or password");
++      default:
++        log.info(`Password sign-in unavailable: ${result.type}`);
++        throw new JmapSignInError(
++          "unavailable",
++          `Unexpected login API response: ${result.type}`
++        );
++    }
++
++    let code;
++    try {
++      const location = new URL(result.location);
++      const params = location.searchParams;
++      if (params.get("state") != state) {
++        throw new Error("state mismatch");
++      }
++      const iss = params.get("iss");
++      if (iss && !sameIssuer(iss, info.issuer)) {
++        throw new Error("issuer mismatch");
++      }
++      if (params.get("error")) {
++        throw new Error(`authorization error ${params.get("error")}`);
++      }
++      code = params.get("code");
++      if (!code) {
++        throw new Error("no code");
++      }
++    } catch (e) {
++      throw new JmapSignInError("unavailable", "Invalid login API redirect", {
++        cause: e,
++      });
++    }
++
++    const form = new URLSearchParams({
++      grant_type: "authorization_code",
++      code,
++      redirect_uri: REDIRECT_URI,
++      client_id: client.clientId,
++      code_verifier: verifier,
++    });
++    if (client.clientSecret) {
++      form.set("client_secret", client.clientSecret);
++    }
++    let tokens;
++    try {
++      const response = await fetchFn(info.tokenEndpoint, {
++        method: "POST",
++        headers: {
++          "Content-Type": "application/x-www-form-urlencoded",
++          Accept: "application/json",
++        },
++        body: form.toString(),
++        credentials: "omit",
++        signal,
++      });
++      tokens = await response.json();
++      if (!response.ok || !tokens?.access_token) {
++        throw new Error(
++          `HTTP ${response.status} ${tokens?.error ?? "no access_token"}`
++        );
++      }
++    } catch (e) {
++      rethrowAbort(e, signal);
++      throw new JmapSignInError("unavailable", "Token exchange failed", {
++        cause: e,
++      });
++    }
++    const expiresIn = Number(tokens.expires_in);
++    return {
++      accessToken: tokens.access_token,
++      refreshToken: tokens.refresh_token || null,
++      expiresIn: Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : null,
++      scope:
++        typeof tokens.scope == "string" && tokens.scope
++          ? tokens.scope
++          : info.scopes,
++    };
++  },
++
++  /**
++   * Put tokens from passwordSignIn() where OAuth2Module looks for them: the
++   * access token in memory and the refresh token in the login manager.
++   *
++   * @param {OAuth2Module} module - Initialized with initFromHostname() or
++   *   initFromMail().
++   * @param {{accessToken: string, refreshToken: ?string,
++   *   expiresIn: ?number, scope: string}} tokens
++   */
++  async storeTokens(module, tokens) {
++    const oauth = module._oauth;
++    if (tokens.scope) {
++      oauth.scope = tokens.scope;
++      module._scope = tokens.scope;
++    }
++    oauth.accessToken = tokens.accessToken;
++    oauth.tokenExpires = tokens.expiresIn
++      ? Date.now() + tokens.expiresIn * 1000
++      : Number.MAX_VALUE;
++    // OAuth2.connect() returns its last promise while the access token is
++    // valid; a token set from outside has none, so give it a settled one.
++    oauth._promise = Promise.resolve();
++    if (tokens.refreshToken) {
++      await module.setRefreshToken(tokens.refreshToken);
++    }
++  },
++
++  /**
++   * Account Settings: switch a server to OAuth by signing in with a password
++   * (and optionally a TOTP code), without a browser.
++   *
++   * @param {nsIMsgIncomingServer} server
++   * @param {object} options
++   * @param {string} options.password
++   * @param {?string} [options.totp]
++   * @param {AbortSignal} [options.signal]
++   * @returns {Promise<OAuthInfo>}
++   * @throws {JmapSignInError}
++   */
++  async signInWithPassword(server, { password, totp, signal } = {}) {
++    let info, client;
++    try {
++      ({ info, client } = await this._discoverForServer(server, signal));
++    } catch (e) {
++      rethrowAbort(e, signal);
++      throw new JmapSignInError("unavailable", e.message, { cause: e });
++    }
++    const tokens = await this.passwordSignIn(info, client, {
++      username: server.username,
++      password,
++      totp,
++      signal,
++    });
++    info.scopes = tokens.scope || info.scopes;
++    const previousAuthMethod = server.authMethod;
++    try {
++      this.writeServerPrefs(server, this.prefValues(info, client));
++      server.authMethod = Ci.nsMsgAuthMethod.OAuth2;
++      const module = new lazy.OAuth2Module();
++      if (!module.initFromMail(server)) {
++        throw new JmapSignInError(
++          "unavailable",
++          "No usable OAuth2 configuration"
++        );
++      }
++      await this.storeTokens(module, tokens);
++    } catch (e) {
++      server.authMethod = previousAuthMethod;
++      if (e instanceof JmapSignInError) {
++        throw e;
++      }
++      throw new JmapSignInError("unavailable", "Storing the tokens failed", {
++        cause: e,
++      });
++    } finally {
 +      lazy.JmapAccountRegistry.forget(server.key);
 +    }
 +    return info;
@@ -30807,6 +32243,239 @@ index 00000000000..50e791795ff
 +  Assert.ok(client.dynamic, "dynamic registration used");
 +  Assert.ok(client.clientId.startsWith("swc1."), "stateless swc1. client id");
 +});
+diff --git a/mailnews/protocols/jmap/test/live/test_live_oauth_account.js b/mailnews/protocols/jmap/test/live/test_live_oauth_account.js
+new file mode 100644
+index 00000000000..f0ba027c8a6
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/live/test_live_oauth_account.js
+@@ -0,0 +1,139 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * LIVE test of the account wizard's "Sign in with Stalwart" path against the
++ * local Stalwart on 127.0.0.1:8080: verify the config with OAuth2, create the
++ * account with CreateInBackend, then sync folders and messages through the
++ * real incoming server (the path the user sees).
++ */
++
++var { JmapOAuth } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapOAuth.sys.mjs"
++);
++var { AccountConfig } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/AccountConfig.sys.mjs"
++);
++var { ConfigVerifier } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/ConfigVerifier.sys.mjs"
++);
++var { CreateInBackend } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/CreateInBackend.sys.mjs"
++);
++var { makeJmapIncoming } = ChromeUtils.importESModule(
++  "resource:///modules/accountcreation/JmapDiscovery.sys.mjs"
++);
++var { MockExternalProtocolService } = ChromeUtils.importESModule(
++  "resource://testing-common/mailnews/MockExternalProtocolService.sys.mjs"
++);
++
++add_live_task(async function test_wizard_oauth_account_syncs_mail() {
++  if (!(await ensureOAuthClient())) {
++    info("skipping: no admin credentials to register the OAuth client");
++    return;
++  }
++  Services.prefs.clearUserPref("mail.jmap.oauth.client_id");
++  const cfg = LIVE_CONFIG.accounts[0];
++
++  const sessionResponse = await fetch(LIVE_CONFIG.sessionUrl);
++  const session = sessionResponse.ok ? await sessionResponse.json() : null;
++  const oauth = await JmapOAuth.discover(LIVE_CONFIG.sessionUrl, { session });
++  Assert.ok(oauth, "OAuth2 discovered");
++
++  // What the wizard builds from discovery.
++  const config = new AccountConfig();
++  config.incoming = makeJmapIncoming(
++    config,
++    { sessionUrl: LIVE_CONFIG.sessionUrl, session },
++    oauth
++  );
++  config.incoming.jmapCapabilities = [
++    "urn:ietf:params:jmap:core",
++    "urn:ietf:params:jmap:mail",
++    "urn:ietf:params:jmap:submission",
++  ];
++  AccountConfig.replaceVariables(config, "Live OAuth", cfg.email, "");
++  Assert.equal(config.incoming.auth, Ci.nsMsgAuthMethod.OAuth2);
++
++  MockExternalProtocolService.init();
++  registerCleanupFunction(() => MockExternalProtocolService.cleanup());
++  const loadPromise = MockExternalProtocolService.promiseLoad();
++  const verifier = new ConfigVerifier(null, new AbortController().signal);
++  const verified = verifier.verifyJmapOAuthConfig(config);
++  const authUrl = await loadPromise;
++  await authorizeWithStalwart(authUrl, cfg.email, cfg.password);
++  const finalConfig = await verified;
++  info(`granted scopes: ${finalConfig.incoming.jmapOAuth.scopes}`);
++
++  const account = await CreateInBackend.createAccountInBackend(finalConfig);
++  const server = account.incomingServer;
++  registerCleanupFunction(() => {
++    try {
++      JmapAccountRegistry.forget(server.key);
++      MailServices.accounts.removeAccount(account, true);
++    } catch (e) {}
++  });
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.OAuth2);
++  for (const pref of [
++    "issuer",
++    "clientId",
++    "scopes",
++    "authorizationEndpoint",
++    "tokenEndpoint",
++  ]) {
++    info(`oauth2.${pref} = ${server.getStringValue(`oauth2.${pref}`)}`);
++  }
++
++  // No browser may open from here on: the token from verification must be
++  // found by the new server.
++  let browserOpened = false;
++  MockExternalProtocolService.promiseLoad().then(
++    () => {
++      browserOpened = true;
++    },
++    () => {}
++  );
++
++  // Make sure the inbox has a message to sync.
++  const subject = `Live OAuth account ${Date.now()}`;
++  const client = await jsClient(server);
++  const accountId = client.getAccountId(JmapCapability.Mail);
++  const inboxId = (
++    await jmapCall(server, "Mailbox/query", { filter: { role: "inbox" } })
++  ).ids[0];
++  const raw = [
++    `From: ${cfg.email}`,
++    `To: ${cfg.email}`,
++    `Subject: ${subject}`,
++    `Message-ID: <${Date.now()}.oauth@live.test>`,
++    `Date: ${new Date().toUTCString()}`,
++    "",
++    "Synced after an OAuth2 wizard sign-in.",
++    "",
++  ].join("\r\n");
++  const { blobId } = await client.upload(
++    new TextEncoder().encode(raw),
++    "message/rfc822",
++    { accountId }
++  );
++  await jmapCall(server, "Email/import", {
++    emails: { m1: { blobId, mailboxIds: { [inboxId]: true }, keywords: {} } },
++  });
++  registerCleanupFunction(() => destroyBySubject(server, subject));
++
++  JmapAccountRegistry.forget(server.key);
++  await syncAll(server);
++  Assert.ok(!browserOpened, "no second browser sign-in after setup");
++
++  const inbox = folderWithFlag(server, Ci.nsMsgFolderFlags.Inbox);
++  Assert.ok(inbox, "Inbox folder created");
++  Assert.ok(
++    await waitForHeader(
++      server,
++      () => folderWithFlag(server, Ci.nsMsgFolderFlags.Inbox),
++      subject
++    ),
++    "the Inbox message is synced through the OAuth2 account"
++  );
++});
+diff --git a/mailnews/protocols/jmap/test/live/test_live_oauth_password.js b/mailnews/protocols/jmap/test/live/test_live_oauth_password.js
+new file mode 100644
+index 00000000000..f4c0f1e43f5
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/live/test_live_oauth_password.js
+@@ -0,0 +1,82 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * LIVE test of the browserless password sign-in (Stalwart's /api/auth login
++ * API plus the token exchange) against the local Stalwart on 127.0.0.1:8080.
++ * The test users have no TOTP.
++ */
++
++var { JmapOAuth, JmapSignInError } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapOAuth.sys.mjs"
++);
++
++const CLIENT_PREF = "mail.jmap.oauth.client_id";
++
++async function discoverInfo() {
++  let session;
++  try {
++    const response = await fetch(LIVE_CONFIG.sessionUrl);
++    session = response.ok ? await response.json() : undefined;
++  } catch (e) {}
++  const oauth = await JmapOAuth.discover(LIVE_CONFIG.sessionUrl, { session });
++  Assert.ok(oauth, "OAuth discovered");
++  return oauth;
++}
++
++add_live_task(async function test_password_signin_tokens() {
++  if (!(await ensureOAuthClient())) {
++    info("skipping: no admin credentials to register the OAuth client");
++    return;
++  }
++  Services.prefs.clearUserPref(CLIENT_PREF);
++  const cfg = LIVE_CONFIG.accounts[0];
++  const oauth = await discoverInfo();
++  const client = await JmapOAuth.resolveClient(oauth);
++
++  // No wrong-password attempt here: it could trip Stalwart's failed-login
++  // blocking for 127.0.0.1. The unit test covers it with a fake server.
++  const tokens = await JmapOAuth.passwordSignIn(oauth, client, {
++    username: cfg.email,
++    password: cfg.password,
++  });
++  Assert.ok(tokens.accessToken, "got an access token");
++  Assert.ok(tokens.refreshToken, "got a refresh token");
++  Assert.ok(tokens.scope.includes("urn:ietf:params:oauth:scope:mail"));
++
++  const authorization = `Bearer ${tokens.accessToken}`;
++  const sessionResponse = await fetch(LIVE_CONFIG.sessionUrl, {
++    headers: { Authorization: authorization },
++  });
++  Assert.ok(sessionResponse.ok, "session with the Bearer token");
++  const session = await sessionResponse.json();
++  const accountId = session.primaryAccounts[JmapCapability.Mail];
++  Assert.ok(accountId, "the session has a mail account");
++  const apiResponse = await fetch(session.apiUrl, {
++    method: "POST",
++    headers: { Authorization: authorization, "Content-Type": "application/json" },
++    body: JSON.stringify({
++      using: ["urn:ietf:params:jmap:core", JmapCapability.Mail],
++      methodCalls: [["Mailbox/get", { accountId, ids: null }, "0"]],
++    }),
++  });
++  Assert.ok(apiResponse.ok, "API request with the Bearer token");
++  const { methodResponses } = await apiResponse.json();
++  Assert.equal(methodResponses[0][0], "Mailbox/get");
++  Assert.ok(methodResponses[0][1].list.length > 0, "mailboxes listed");
++});
++
++add_live_task(async function test_sign_in_with_password_account() {
++  if (!(await ensureOAuthClient())) {
++    info("skipping: no admin credentials to register the OAuth client");
++    return;
++  }
++  Services.prefs.clearUserPref(CLIENT_PREF);
++  const cfg = LIVE_CONFIG.accounts[0];
++  const { server } = await createLiveAccount(cfg.email);
++  await JmapOAuth.signInWithPassword(server, { password: cfg.password });
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.OAuth2);
++  const { list } = await jmapCall(server, "Mailbox/get", { ids: null });
++  Assert.ok(list.length > 0, "Mailbox/get works after password sign-in");
++});
 diff --git a/mailnews/protocols/jmap/test/live/test_live_settings_push.js b/mailnews/protocols/jmap/test/live/test_live_settings_push.js
 new file mode 100644
 index 00000000000..c87d51cbe8e
@@ -30970,10 +32639,10 @@ index 00000000000..c87d51cbe8e
 +});
 diff --git a/mailnews/protocols/jmap/test/live/xpcshell.toml b/mailnews/protocols/jmap/test/live/xpcshell.toml
 new file mode 100644
-index 00000000000..6dbb4bbbd98
+index 00000000000..e298cf9b9ca
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/live/xpcshell.toml
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,21 @@
 +[DEFAULT]
 +# LIVE tests against a local Stalwart JMAP server on 127.0.0.1:8080.
 +# Tasks skip themselves when $JMAP_LIVE_ACCOUNTS (or the default account
@@ -30991,6 +32660,10 @@ index 00000000000..6dbb4bbbd98
 +["test_live_oauth.js"]
 +
 +["test_live_settings_push.js"]
++
++["test_live_oauth_account.js"]
++
++["test_live_oauth_password.js"]
 diff --git a/mailnews/protocols/jmap/test/moz.build b/mailnews/protocols/jmap/test/moz.build
 new file mode 100644
 index 00000000000..20180627b07
@@ -34093,6 +35766,359 @@ index 00000000000..b7df0b93383
 +  ]);
 +  Assert.deepEqual(await storedRefreshTokens(), ["refresh_token_2"]);
 +});
+diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_oauth_password.js b/mailnews/protocols/jmap/test/unit/test_jmap_oauth_password.js
+new file mode 100644
+index 00000000000..ca3f2258cc4
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/unit/test_jmap_oauth_password.js
+@@ -0,0 +1,347 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Tests the browserless password (+ TOTP) sign-in, JmapOAuth.passwordSignIn,
++ * storeTokens and signInWithPassword, against a local fake of Stalwart's
++ * login API (/api/auth) and token endpoint (/auth/token).
++ */
++
++var { HttpServer } = ChromeUtils.importESModule(
++  "resource://testing-common/httpd.sys.mjs"
++);
++var { NetUtil } = ChromeUtils.importESModule(
++  "resource://gre/modules/NetUtil.sys.mjs"
++);
++var { MailServices } = ChromeUtils.importESModule(
++  "resource:///modules/MailServices.sys.mjs"
++);
++var { JmapOAuth, JmapSignInError, REDIRECT_URI } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapOAuth.sys.mjs"
++);
++var { OAuth2Module } = ChromeUtils.importESModule(
++  "resource:///modules/OAuth2Module.sys.mjs"
++);
++
++do_get_profile();
++
++const USERNAME = "user@test.test";
++const PASSWORD = "secret";
++const TOTP = "123456";
++const CLIENT_ID = "thunderbird-jmap";
++const SCOPES = "offline_access urn:ietf:params:oauth:scope:mail";
++
++let httpServer;
++let origin;
++let issuerKey;
++let requireTotp = false;
++let tokenRequests = [];
++const authRequests = [];
++/** code -> { challenge, state } */
++const codes = new Map();
++let codeCounter = 0;
++
++function readBody(request) {
++  const stream = request.bodyInputStream;
++  return NetUtil.readInputStreamToString(stream, stream.available(), {
++    charset: "UTF-8",
++  });
++}
++
++function writeJson(response, json, status = 200) {
++  response.setStatusLine("1.1", status, status == 200 ? "OK" : "Error");
++  response.setHeader("Content-Type", "application/json", false);
++  response.write(JSON.stringify(json));
++}
++
++async function sha256Base64url(text) {
++  const digest = await crypto.subtle.digest(
++    "SHA-256",
++    new TextEncoder().encode(text)
++  );
++  return ChromeUtils.base64URLEncode(new Uint8Array(digest), { pad: false });
++}
++
++add_setup(async function () {
++  httpServer = new HttpServer();
++  httpServer.start(-1);
++  const port = httpServer.identity.primaryPort;
++  origin = `http://127.0.0.1:${port}`;
++  issuerKey = `127.0.0.1:${port}`;
++
++  httpServer.registerPathHandler(
++    "/.well-known/oauth-authorization-server",
++    (request, response) =>
++      writeJson(response, {
++        issuer: origin,
++        authorization_endpoint: `${origin}/authorize/code`,
++        token_endpoint: `${origin}/auth/token`,
++        response_types_supported: ["code"],
++        grant_types_supported: ["authorization_code", "refresh_token"],
++        code_challenge_methods_supported: ["S256"],
++        authorization_response_iss_parameter_supported: true,
++      })
++  );
++  httpServer.registerPathHandler("/jmap/session", (request, response) =>
++    writeJson(response, {}, 401)
++  );
++  httpServer.registerPathHandler("/api/auth", (request, response) => {
++    const body = JSON.parse(readBody(request));
++    authRequests.push({ ...body, accountSecret: undefined });
++    if (body.type != "authCode") {
++      writeJson(response, { type: "invalid" });
++      return;
++    }
++    if (body.accountName != USERNAME || body.accountSecret != PASSWORD) {
++      writeJson(response, { type: "failure" });
++      return;
++    }
++    if (requireTotp && !body.mfaToken) {
++      writeJson(response, { type: "mfaRequired" });
++      return;
++    }
++    if (requireTotp && body.mfaToken != TOTP) {
++      // Stalwart reports a wrong code as a plain failure.
++      writeJson(response, { type: "failure" });
++      return;
++    }
++    const query = new URLSearchParams(body.query);
++    Assert.equal(query.get("redirect_uri"), REDIRECT_URI);
++    Assert.equal(query.get("code_challenge_method"), "S256");
++    const code = `code${++codeCounter}`;
++    codes.set(code, {
++      challenge: query.get("code_challenge"),
++      clientId: query.get("client_id"),
++    });
++    const location = new URL(REDIRECT_URI);
++    location.searchParams.set("code", code);
++    location.searchParams.set("state", query.get("state"));
++    location.searchParams.set("iss", origin);
++    writeJson(response, { type: "authenticated", location: location.href });
++  });
++  httpServer.registerPathHandler("/auth/token", (request, response) => {
++    response.processAsync();
++    const form = new URLSearchParams(readBody(request));
++    tokenRequests.push(form);
++    const entry = codes.get(form.get("code"));
++    codes.delete(form.get("code"));
++    sha256Base64url(form.get("code_verifier") ?? "").then(challenge => {
++      if (
++        form.get("grant_type") != "authorization_code" ||
++        form.get("redirect_uri") != REDIRECT_URI ||
++        !entry ||
++        entry.clientId != form.get("client_id") ||
++        entry.challenge != challenge
++      ) {
++        writeJson(response, { error: "invalid_grant" }, 400);
++      } else {
++        writeJson(response, {
++          access_token: "access_token",
++          refresh_token: "refresh_token",
++          token_type: "Bearer",
++          expires_in: 3600,
++          scope: SCOPES,
++        });
++      }
++      response.finish();
++    });
++  });
++
++  registerCleanupFunction(async () => {
++    await Services.logins.removeAllLoginsAsync();
++    await new Promise(resolve => httpServer.stop(resolve));
++  });
++});
++
++async function discoverInfo() {
++  const info = await JmapOAuth.discover(`${origin}/jmap/session`);
++  Assert.ok(info, "OAuth is discovered");
++  return info;
++}
++
++const CLIENT = { clientId: CLIENT_ID, clientSecret: null, dynamic: false };
++
++add_task(async function test_password_signin() {
++  requireTotp = false;
++  const info = await discoverInfo();
++  const tokens = await JmapOAuth.passwordSignIn(info, CLIENT, {
++    username: USERNAME,
++    password: PASSWORD,
++  });
++  Assert.equal(tokens.accessToken, "access_token");
++  Assert.equal(tokens.refreshToken, "refresh_token");
++  Assert.equal(tokens.expiresIn, 3600);
++  Assert.equal(tokens.scope, SCOPES);
++  const last = authRequests.at(-1);
++  Assert.equal(last.consent, true);
++  Assert.ok(!("mfaToken" in last), "no TOTP sent when none is given");
++  Assert.ok(
++    !tokenRequests.at(-1).has("client_secret"),
++    "no secret for a public client"
++  );
++});
++
++add_task(async function test_wrong_password() {
++  requireTotp = false;
++  const info = await discoverInfo();
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: "wrong",
++    }),
++    e => e instanceof JmapSignInError && e.code == "failure"
++  );
++});
++
++add_task(async function test_totp() {
++  requireTotp = true;
++  const info = await discoverInfo();
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: PASSWORD,
++    }),
++    e => e instanceof JmapSignInError && e.code == "mfaRequired",
++    "a TOTP code is required"
++  );
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: PASSWORD,
++      totp: "000000",
++    }),
++    e => e instanceof JmapSignInError && e.code == "badCode",
++    "a wrong code is told apart from a wrong password"
++  );
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: "wrong",
++      totp: TOTP,
++    }),
++    e => e instanceof JmapSignInError && e.code == "failure",
++    "a wrong password with a code is still a wrong password"
++  );
++  const tokens = await JmapOAuth.passwordSignIn(info, CLIENT, {
++    username: USERNAME,
++    password: PASSWORD,
++    totp: "123 456",
++  });
++  Assert.equal(tokens.accessToken, "access_token");
++  Assert.equal(authRequests.at(-1).mfaToken, TOTP, "the code is sent");
++  requireTotp = false;
++});
++
++add_task(async function test_state_mismatch() {
++  const info = await discoverInfo();
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: PASSWORD,
++      fetch: async (url, options) => {
++        const response = await fetch(url, options);
++        if (!url.endsWith("/api/auth")) {
++          return response;
++        }
++        const json = await response.json();
++        const location = new URL(json.location);
++        location.searchParams.set("state", "forged");
++        json.location = location.href;
++        return new Response(JSON.stringify(json));
++      },
++    }),
++    e => e instanceof JmapSignInError && e.code == "unavailable"
++  );
++});
++
++add_task(async function test_unavailable() {
++  const info = await discoverInfo();
++  await Assert.rejects(
++    JmapOAuth.passwordSignIn(info, CLIENT, {
++      username: USERNAME,
++      password: PASSWORD,
++      fetch: async () => new Response(JSON.stringify({ type: "redirect" })),
++    }),
++    e => e instanceof JmapSignInError && e.code == "unavailable"
++  );
++});
++
++add_task(async function test_store_tokens() {
++  await Services.logins.removeAllLoginsAsync();
++  const info = await discoverInfo();
++  const tokens = await JmapOAuth.passwordSignIn(info, CLIENT, {
++    username: USERNAME,
++    password: PASSWORD,
++  });
++  info.scopes = tokens.scope;
++  const module = new OAuth2Module();
++  Assert.ok(
++    module.initFromHostname(
++      "127.0.0.1",
++      USERNAME,
++      "jmap",
++      JmapOAuth.customDetails(JmapOAuth.prefValues(info, CLIENT))
++    )
++  );
++  await JmapOAuth.storeTokens(module, tokens);
++  const logins = await Services.logins.searchLoginsAsync({
++    origin: `oauth://${issuerKey}`,
++  });
++  Assert.deepEqual(
++    logins.map(l => [l.username, l.password, l.httpRealm]),
++    [[USERNAME, "refresh_token", SCOPES]],
++    "the refresh token is stored with the granted scope"
++  );
++  Assert.ok(!module._oauth.tokenExpired, "the access token is usable");
++  Assert.equal(module._oauth.accessToken, "access_token");
++});
++
++add_task(async function test_sign_in_with_password() {
++  await Services.logins.removeAllLoginsAsync();
++  const server = MailServices.accounts.createIncomingServer(
++    USERNAME,
++    "127.0.0.1",
++    "jmap"
++  );
++  server.setStringValue("jmap_session_url", `${origin}/jmap/session`);
++  server.authMethod = Ci.nsMsgAuthMethod.passwordCleartext;
++  registerCleanupFunction(() =>
++    MailServices.accounts.removeIncomingServer(server, false)
++  );
++
++  await Assert.rejects(
++    JmapOAuth.signInWithPassword(server, { password: "wrong" }),
++    e => e instanceof JmapSignInError && e.code == "failure"
++  );
++  Assert.equal(
++    server.authMethod,
++    Ci.nsMsgAuthMethod.passwordCleartext,
++    "a failed sign-in keeps the old method"
++  );
++
++  const info = await JmapOAuth.signInWithPassword(server, {
++    password: PASSWORD,
++  });
++  Assert.equal(info.issuer, origin);
++  Assert.equal(server.authMethod, Ci.nsMsgAuthMethod.OAuth2);
++  Assert.equal(server.getStringValue("oauth2.clientId"), CLIENT_ID);
++  Assert.equal(server.getStringValue("oauth2.scopes"), SCOPES);
++  const logins = await Services.logins.searchLoginsAsync({
++    origin: `oauth://${issuerKey}`,
++  });
++  Assert.deepEqual(
++    logins.filter(l => l.username == USERNAME).map(l => l.password),
++    ["refresh_token"]
++  );
++  const module = new OAuth2Module();
++  Assert.ok(module.initFromMail(server));
++  const token = await new Promise((resolve, reject) =>
++    module.getAccessToken({ onSuccess: resolve, onFailure: reject })
++  );
++  Assert.equal(
++    token,
++    "access_token",
++    "the stored access token is used without a prompt"
++  );
++});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_oauth_setup.js b/mailnews/protocols/jmap/test/unit/test_jmap_oauth_setup.js
 new file mode 100644
 index 00000000000..03057de0d4d
@@ -35773,10 +37799,10 @@ index 00000000000..278fae568fe
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/xpcshell.toml b/mailnews/protocols/jmap/test/unit/xpcshell.toml
 new file mode 100644
-index 00000000000..6ed4cdfcd2c
+index 00000000000..a1d1699ed89
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/xpcshell.toml
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,46 @@
 +[DEFAULT]
 +head = "head.js"
 +
@@ -35816,6 +37842,9 @@ index 00000000000..6ed4cdfcd2c
 +
 +["test_jmap_oauth_flow.js"]
 +prefs = ["mailnews.oauth.loglevel=Debug"]
++tags = ["oauth"]
++
++["test_jmap_oauth_password.js"]
 +tags = ["oauth"]
 +
 +["test_jmap_oauth_setup.js"]
