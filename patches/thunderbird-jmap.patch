@@ -27681,10 +27681,10 @@ index 00000000000..05c30a26dc0
 +#endif  // COMM_MAILNEWS_PROTOCOLS_JMAP_SRC_JMAPFETCHMSGSTOOFFLINE_H_
 diff --git a/mailnews/protocols/jmap/src/JmapFolder.cpp b/mailnews/protocols/jmap/src/JmapFolder.cpp
 new file mode 100644
-index 00000000000..84e55a4e4da
+index 00000000000..9efa5adc597
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapFolder.cpp
-@@ -0,0 +1,1674 @@
+@@ -0,0 +1,1707 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28036,6 +28036,39 @@ index 00000000000..84e55a4e4da
 +// Mail folders carry the Mail flag; Gloda (global search) and other
 +// consumers ignore folders without it. Folders created by older builds
 +// persisted their flags without it, so add it whenever the flags are read.
++// Sync stores the JMAP Email "preview" on each header. For headers without
++// one, fall back to the offline copy when the body has been downloaded.
++NS_IMETHODIMP JmapFolder::FetchMsgPreviewText(
++    nsTArray<nsMsgKey> const& aKeysToFetch, nsIUrlListener* aUrlListener,
++    bool* aAsyncResults) {
++  NS_ENSURE_ARG_POINTER(aAsyncResults);
++  *aAsyncResults = false;
++  nsresult rv = GetDatabase();
++  NS_ENSURE_SUCCESS(rv, rv);
++  for (nsMsgKey key : aKeysToFetch) {
++    nsCOMPtr<nsIMsgDBHdr> msgHdr;
++    rv = mDatabase->GetMsgHdrForKey(key, getter_AddRefs(msgHdr));
++    if (NS_FAILED(rv) || !msgHdr) {
++      continue;
++    }
++    nsCString preview;
++    msgHdr->GetStringProperty("preview", preview);
++    if (!preview.IsEmpty()) {
++      continue;
++    }
++    bool offline = false;
++    if (NS_FAILED(HasMsgOffline(key, &offline)) || !offline) {
++      continue;
++    }
++    nsCOMPtr<nsIInputStream> stream;
++    rv = GetMsgInputStream(msgHdr, getter_AddRefs(stream));
++    if (NS_SUCCEEDED(rv) && stream) {
++      GetMsgPreviewTextFromStream(msgHdr, stream);
++    }
++  }
++  return NS_OK;
++}
++
 +NS_IMETHODIMP JmapFolder::GetFlags(uint32_t* aFlags) {
 +  NS_ENSURE_ARG_POINTER(aFlags);
 +  nsresult rv = nsMsgDBFolder::GetFlags(aFlags);
@@ -29361,10 +29394,10 @@ index 00000000000..84e55a4e4da
 +}
 diff --git a/mailnews/protocols/jmap/src/JmapFolder.h b/mailnews/protocols/jmap/src/JmapFolder.h
 new file mode 100644
-index 00000000000..def1dd8ff2d
+index 00000000000..1f2d71bc5cd
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapFolder.h
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,172 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29396,6 +29429,9 @@ index 00000000000..def1dd8ff2d
 +  // nsIMsgFolder
 +  NS_IMETHOD GetIncomingServerType(nsACString& aServerType) override;
 +  NS_IMETHOD GetFlags(uint32_t* aFlags) override;
++  NS_IMETHOD FetchMsgPreviewText(nsTArray<nsMsgKey> const& aKeysToFetch,
++                                 nsIUrlListener* aUrlListener,
++                                 bool* aAsyncResults) override;
 +  NS_IMETHOD GetSupportsOffline(bool* supportsOffline) override;
 +  NS_IMETHOD GetDeletable(bool* deletable) override;
 +  NS_IMETHOD GetCanCreateSubfolders(bool* canCreateSubfolders) override;
