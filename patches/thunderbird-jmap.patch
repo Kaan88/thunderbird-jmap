@@ -6370,10 +6370,10 @@ index 600afd881d2..3305a0c44e7 100644
  (function () {
 diff --git a/mail/components/jmapfiles/content/jmapFiles.css b/mail/components/jmapfiles/content/jmapFiles.css
 new file mode 100644
-index 00000000000..feb25f45a54
+index 00000000000..2d83386232f
 --- /dev/null
 +++ b/mail/components/jmapfiles/content/jmapFiles.css
-@@ -0,0 +1,964 @@
+@@ -0,0 +1,1003 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7108,6 +7108,45 @@ index 00000000000..feb25f45a54
 +
 +.preview-markdown img {
 +  max-width: 100%;
++}
++
++.preview-markdown-view {
++  display: flex;
++  align-self: flex-end;
++  margin: 8px 8px 0;
++}
++
++.preview-markdown-view button {
++  margin: 0;
++  padding: 2px 10px;
++  border: 1px solid var(--files-border);
++  background: none;
++  color: inherit;
++  font-size: 0.9em;
++}
++
++.preview-markdown-view button:first-child {
++  border-start-start-radius: var(--files-radius);
++  border-end-start-radius: var(--files-radius);
++}
++
++.preview-markdown-view button:last-child {
++  margin-inline-start: -1px;
++  border-start-end-radius: var(--files-radius);
++  border-end-end-radius: var(--files-radius);
++}
++
++.preview-markdown-view button:hover {
++  background-color: var(--files-hover);
++}
++
++.preview-markdown-view button[aria-pressed="true"] {
++  background-color: var(--files-pressed);
++  font-weight: 600;
++}
++
++.preview-markdown-view button:focus-visible {
++  outline: var(--files-focus-outline);
 +}
 +
 +.preview-markdown-link {
@@ -8194,10 +8233,10 @@ index 00000000000..d69ce9167fa
 +</html>
 diff --git a/mail/components/jmapfiles/content/jmapFilesPreview.js b/mail/components/jmapfiles/content/jmapFilesPreview.js
 new file mode 100644
-index 00000000000..4f62b930d19
+index 00000000000..aaae5e340ad
 --- /dev/null
 +++ b/mail/components/jmapfiles/content/jmapFilesPreview.js
-@@ -0,0 +1,1214 @@
+@@ -0,0 +1,1344 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8355,6 +8394,59 @@ index 00000000000..4f62b930d19
 +    `<iframe sandbox="" srcdoc="${escapeAttribute(html)}"></iframe>`
 +  );
 +}
++
++/**
++ * Converted Markdown parsed into an inert document (nothing in it runs or
++ * loads). Returns its body.
++ */
++function parseMarkdown(value) {
++  return new DOMParser().parseFromString(
++    `<!DOCTYPE html><body>${markdownToHTML(value)}</body>`,
++    "text/html"
++  ).body;
++}
++
++/** Styles of the page showing Markdown in a tab (like jmapFiles.css). */
++const MARKDOWN_PAGE_STYLE = `
++:root{color-scheme:light dark;--border:color-mix(in srgb,currentColor 15%,transparent);
++--muted:GrayText;--accent:LinkText;--code:color-mix(in srgb,currentColor 8%,transparent);
++--panel:color-mix(in srgb,currentColor 4%,Canvas)}
++body{margin:0;background:Canvas;color:CanvasText;font:message-box;font-size:15px}
++.page{max-width:900px;margin:0 auto;padding:16px 24px 48px}
++.page>input{position:absolute;opacity:0;pointer-events:none}
++.page>label{display:inline-block;padding:4px 14px;border:1px solid var(--border);
++cursor:pointer;user-select:none;font-size:13px}
++.page>label[for=view-rendered]{border-start-start-radius:6px;border-end-start-radius:6px}
++.page>label[for=view-source]{margin-inline-start:-1px;border-start-end-radius:6px;border-end-end-radius:6px}
++.page>input:checked+label{background:var(--code);font-weight:600}
++.page>input:focus-visible+label{outline:2px solid AccentColor;outline-offset:1px}
++main{margin-top:16px}
++#view-rendered:checked~main .source,#view-source:checked~main .rendered{display:none}
++.source{margin:0;padding:12px 16px;border:1px solid var(--border);border-radius:8px;
++background:var(--panel);white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;
++font-family:monospace;font-size:13px;line-height:1.45}
++.rendered{line-height:1.6;overflow-wrap:break-word}
++.rendered :is(h1,h2,h3,h4,h5,h6){margin:1.2em 0 .5em;line-height:1.25;font-weight:600}
++.rendered>:first-child{margin-top:0}
++.rendered h1{font-size:2em}.rendered h2{font-size:1.5em}.rendered h3{font-size:1.25em}
++.rendered :is(h1,h2){padding-bottom:.3em;border-bottom:1px solid var(--border)}
++.rendered :is(p,ul,ol,blockquote,pre,table){margin:0 0 1em}
++.rendered :is(ul,ol){padding-inline-start:2em}
++.rendered :is(ul,ol) :is(ul,ol){margin-bottom:0}
++.rendered .contains-task-list{list-style:none;padding-inline-start:1.4em}
++.rendered .task-list-item input{margin:0 .4em 0 -1.4em;vertical-align:middle}
++.rendered blockquote{padding:0 1em;border-inline-start:3px solid var(--border);color:var(--muted)}
++.rendered code{padding:.15em .35em;border-radius:4px;background:var(--code);font-family:monospace;font-size:.9em}
++.rendered pre{padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--panel);overflow:auto;line-height:1.45;tab-size:4}
++.rendered pre code{padding:0;background:none}
++.rendered hr{height:0;margin:1.5em 0;border:none;border-top:1px solid var(--border)}
++.rendered table{display:block;max-width:100%;overflow:auto;border-collapse:collapse}
++.rendered :is(th,td){padding:6px 13px;border:1px solid var(--border)}
++.rendered th{background:var(--panel);font-weight:600}
++.rendered img{max-width:100%}
++.rendered a{color:var(--accent)}
++.note{color:var(--muted);font-style:italic}
++`;
 +
 +/** A page showing an (SVG) image through <img>, so its scripts never run. */
 +function imageWrapper(url, title) {
@@ -8860,13 +8952,34 @@ index 00000000000..4f62b930d19
 +    const article = document.createElement("article");
 +    article.className = "preview-markdown";
 +    article.dir = "auto";
-+    // An inert document: nothing in it runs or loads.
-+    const parsed = new DOMParser().parseFromString(
-+      `<!DOCTYPE html><body>${markdownToHTML(value)}</body>`,
-+      "text/html"
-+    );
-+    article.append(...this._copyMarkdownNodes(parsed.body.childNodes));
-+    this.el.content.append(article);
++    article.append(...this._copyMarkdownNodes(parseMarkdown(value).childNodes));
++    const source = document.createElement("pre");
++    source.className = "preview-text preview-markdown-source";
++    source.textContent = value;
++    source.hidden = true;
++
++    // Rendered / Source switch.
++    const bar = document.createElement("div");
++    bar.className = "preview-markdown-view";
++    bar.setAttribute("role", "group");
++    document.l10n.setAttributes(bar, "jmap-files-markdown-view");
++    const buttons = ["rendered", "source"].map(view => {
++      const button = document.createElement("button");
++      button.type = "button";
++      button.dataset.view = view;
++      button.setAttribute("aria-pressed", view == "rendered");
++      document.l10n.setAttributes(button, `jmap-files-markdown-${view}`);
++      button.addEventListener("click", () => {
++        for (const other of buttons) {
++          other.setAttribute("aria-pressed", other == button);
++        }
++        article.hidden = view != "rendered";
++        source.hidden = view != "source";
++      });
++      return button;
++    });
++    bar.append(...buttons);
++    this.el.content.append(bar, article, source);
 +    if (truncated) {
 +      this._note("jmap-files-preview-truncated");
 +    }
@@ -8877,11 +8990,11 @@ index 00000000000..4f62b930d19
 +   * and attributes the converter makes. Links get no href (so nothing can
 +   * navigate this page) and open in the system browser instead.
 +   */
-+  _copyMarkdownNodes(nodes) {
++  _copyMarkdownNodes(nodes, doc = document, forPage = false) {
 +    const copies = [];
 +    for (const node of nodes) {
 +      if (node.nodeType == Node.TEXT_NODE) {
-+        copies.push(document.createTextNode(node.data));
++        copies.push(doc.createTextNode(node.data));
 +        continue;
 +      }
 +      if (node.nodeType != Node.ELEMENT_NODE) {
@@ -8891,10 +9004,10 @@ index 00000000000..4f62b930d19
 +      const attributes = Object.hasOwn(ALLOWED_ELEMENTS, tag) ? ALLOWED_ELEMENTS[tag] : null;
 +      if (!attributes) {
 +        // Unknown: keep only its text.
-+        copies.push(...this._copyMarkdownNodes(node.childNodes));
++        copies.push(...this._copyMarkdownNodes(node.childNodes, doc, forPage));
 +        continue;
 +      }
-+      const copy = document.createElement(tag);
++      const copy = doc.createElement(tag);
 +      for (const name of attributes) {
 +        const attrValue = node.getAttribute(name);
 +        if (attrValue === null || name == "href" || name == "src") {
@@ -8916,7 +9029,13 @@ index 00000000000..4f62b930d19
 +        copy.src = src;
 +      } else if (tag == "a") {
 +        const href = safeLinkURL(node.getAttribute("href"));
-+        if (href) {
++        if (href && forPage) {
++          // In a tab, the "single-page" link handler opens it externally.
++          copy.setAttribute("href", href);
++          if (!copy.title) {
++            copy.title = href;
++          }
++        } else if (href) {
 +          copy.className = "preview-markdown-link";
 +          copy.dataset.href = href;
 +          copy.setAttribute("role", "link");
@@ -8941,10 +9060,56 @@ index 00000000000..4f62b930d19
 +          });
 +        }
 +      }
-+      copy.append(...this._copyMarkdownNodes(node.childNodes));
++      copy.append(...this._copyMarkdownNodes(node.childNodes, doc, forPage));
 +      copies.push(copy);
 +    }
 +    return copies;
++  }
++
++  /**
++   * Write a static page showing a Markdown node rendered, with a Source
++   * view. The page has no scripts (the switch is CSS only), and its CSP
++   * allows only inline styles and data: images. Returns null for binary data.
++   */
++  async _writeMarkdownPage(purpose, node, blob) {
++    const text = await this._text(blob);
++    if (text.binary) {
++      return null;
++    }
++    const parsed = parseMarkdown(text.value);
++    const doc = parsed.ownerDocument;
++    const article = doc.createElement("article");
++    article.className = "rendered";
++    article.dir = "auto";
++    article.append(...this._copyMarkdownNodes(parsed.childNodes, doc, true));
++    const source = doc.createElement("pre");
++    source.className = "source";
++    source.dir = "auto";
++    source.textContent = text.value;
++    const [rendered, sourceLabel, viewLabel, truncatedNote] = await document.l10n.formatValues([
++      "jmap-files-markdown-rendered",
++      "jmap-files-markdown-source",
++      "jmap-files-markdown-view-label",
++      "jmap-files-preview-truncated",
++    ]);
++    const page =
++      `<!DOCTYPE html><html><meta charset="utf-8">${cspMeta("data:")}` +
++      '<meta name="color-scheme" content="light dark">' +
++      `<title>${escapeText(node.name ?? "")}</title><style>${MARKDOWN_PAGE_STYLE}</style>` +
++      `<body><div class="page" role="radiogroup" aria-label="${escapeAttribute(viewLabel)}">` +
++      '<input type="radio" name="view" id="view-rendered" checked>' +
++      `<label for="view-rendered">${escapeText(rendered)}</label>` +
++      '<input type="radio" name="view" id="view-source">' +
++      `<label for="view-source">${escapeText(sourceLabel)}</label>` +
++      `<main>${article.outerHTML}${source.outerHTML}` +
++      (text.truncated ? `<p class="note">${escapeText(truncatedNote)}</p>` : "") +
++      "</main></div></body></html>";
++    return this._writeFile(
++      purpose,
++      node,
++      `${this._safeName(node)}.html`,
++      new TextEncoder().encode(page)
++    );
 +  }
 +
 +  /** Open a Markdown link in the system's default application. */
@@ -9167,7 +9332,8 @@ index 00000000000..4f62b930d19
 +  /**
 +   * Open a file in a Thunderbird tab (pdf.js, images, media, text, pages).
 +   * The server's HTML, SVG or XML never loads directly: pages go through the
-+   * sandboxed wrapper, SVG through <img>, and text is saved as .txt, so the
++   * sandboxed wrapper, SVG through <img>, Markdown as a static rendered page
++   * and text is saved as .txt, so the
 +   * type Gecko picks from the extension always matches previewKind.
 +   */
 +  async openInTab(node) {
@@ -9204,8 +9370,11 @@ index 00000000000..4f62b930d19
 +        file = await this.localCopy(node, withExtension(safeName, "pdf"));
 +        query = "?type=application/pdf";
 +        break;
-+      case "text":
 +      case "markdown":
++        file = await this._writeMarkdownPage("open", node, await this._fetch(node));
++        file ??= await this.localCopy(node, withExtension(safeName, "txt"));
++        break;
++      case "text":
 +      case "json":
 +      case "csv":
 +        file = await this.localCopy(node, withExtension(safeName, "txt"));
@@ -12097,10 +12266,10 @@ index 00000000000..a3a4a6e8b7b
 +["browser_jmapFilesTab.js"]
 diff --git a/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js b/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js
 new file mode 100644
-index 00000000000..b0aef73a579
+index 00000000000..89318ee3988
 --- /dev/null
 +++ b/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,520 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12117,6 +12286,10 @@ index 00000000000..b0aef73a579
 +
 +const { JmapFiles, JmapFileService } = ChromeUtils.importESModule(
 +  "resource:///modules/jmapfiles/JmapFiles.sys.mjs"
++);
++
++const { MockExternalProtocolService } = ChromeUtils.importESModule(
++  "resource://testing-common/mailnews/MockExternalProtocolService.sys.mjs"
 +);
 +
 +const SERVER_KEY = "jmapFilesBrowserTest";
@@ -12180,6 +12353,37 @@ index 00000000000..b0aef73a579
 +    () => previewContent().dataset.kind == kind && check(),
 +    `preview of kind ${kind}`
 +  );
++}
++
++/**
++ * Open the context menu of a row and choose Open in Tab. Returns the new tab.
++ */
++async function openRowInTab(name) {
++  // Back in the Files tab, with its window focused, and the row selected
++  // alone (the preview follows the selection), so that the context menu
++  // opens for that row.
++  await SimpleTest.promiseFocus(win);
++  await select(name);
++  await TestUtils.waitForCondition(
++    () => win.document.getElementById("previewName").textContent == name,
++    `${name} selected`
++  );
++  const menu = win.document.getElementById("fileContextMenu");
++  const shown = BrowserTestUtils.waitForEvent(menu, "popupshown");
++  EventUtils.synthesizeMouseAtCenter(rowFor(name), { type: "contextmenu" }, win);
++  await shown;
++  Assert.ok(!win.document.getElementById("contextOpenTab").hidden);
++  Assert.ok(win.document.getElementById("contextOpen").hidden, "Open is for folders");
++  Assert.ok(!win.document.getElementById("contextRename").disabled);
++
++  const tabCount = tabmail.tabInfo.length;
++  const hidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
++  menu.activateItem(win.document.getElementById("contextOpenTab"));
++  await hidden;
++  await TestUtils.waitForCondition(() => tabmail.tabInfo.length == tabCount + 1, "tab opened");
++  const tab = tabmail.currentTabInfo;
++  Assert.equal(tab.mode.name, "contentTab");
++  return tab;
 +}
 +
 +/** Save a screenshot of the window when JMAP_FILES_SHOT_DIR is set. */
@@ -12331,6 +12535,20 @@ index 00000000000..b0aef73a579
 +  Assert.ok(![...md.querySelectorAll("a")].some(a => a.hasAttribute("href")), "no href");
 +  Assert.ok(!md.querySelector("img"), "remote images are not loaded");
 +  Assert.equal(md.querySelectorAll("td").length, 2, "table");
++  // The Rendered / Source switch.
++  const sourceButton = previewContent().querySelector(".preview-markdown-view [data-view=source]");
++  EventUtils.synthesizeMouseAtCenter(sourceButton, {}, win);
++  Assert.ok(md.hidden, "rendered view hidden");
++  const source = previewContent().querySelector(".preview-markdown-source");
++  Assert.ok(!source.hidden, "source shown");
++  Assert.equal(source.textContent, MARKDOWN);
++  Assert.equal(sourceButton.getAttribute("aria-pressed"), "true");
++  EventUtils.synthesizeMouseAtCenter(
++    previewContent().querySelector(".preview-markdown-view [data-view=rendered]"),
++    {},
++    win
++  );
++  Assert.ok(!md.hidden && source.hidden, "rendered view shown again");
 +  Assert.equal(win.previewKind({ name: "x.md" }).kind, "markdown");
 +  Assert.equal(win.previewKind({ name: "x", mediaType: "text/markdown" }).kind, "markdown");
 +  Assert.equal(win.previewKind({ name: "x.markdown", mediaType: "text/plain" }).kind, "markdown");
@@ -12426,22 +12644,7 @@ index 00000000000..b0aef73a579
 +});
 +
 +add_task(async function test_context_menu_and_open_in_tab() {
-+  await select("notes.txt");
-+  const menu = win.document.getElementById("fileContextMenu");
-+  const shown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-+  EventUtils.synthesizeMouseAtCenter(rowFor("notes.txt"), { type: "contextmenu" }, win);
-+  await shown;
-+  Assert.ok(!win.document.getElementById("contextOpenTab").hidden);
-+  Assert.ok(win.document.getElementById("contextOpen").hidden, "Open is for folders");
-+  Assert.ok(!win.document.getElementById("contextRename").disabled);
-+
-+  const tabCount = tabmail.tabInfo.length;
-+  const hidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
-+  menu.activateItem(win.document.getElementById("contextOpenTab"));
-+  await hidden;
-+  await TestUtils.waitForCondition(() => tabmail.tabInfo.length == tabCount + 1, "tab opened");
-+  const tab = tabmail.currentTabInfo;
-+  Assert.equal(tab.mode.name, "contentTab");
++  const tab = await openRowInTab("notes.txt");
 +  await TestUtils.waitForCondition(
 +    () => tab.browser.currentURI?.spec.endsWith(".txt"),
 +    "text file shown in the tab as .txt"
@@ -12450,19 +12653,7 @@ index 00000000000..b0aef73a579
 +});
 +
 +add_task(async function test_open_html_in_tab() {
-+  await select("page.html");
-+  const menu = win.document.getElementById("fileContextMenu");
-+  const shown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-+  EventUtils.synthesizeMouseAtCenter(rowFor("page.html"), { type: "contextmenu" }, win);
-+  await shown;
-+  Assert.ok(!win.document.getElementById("contextOpenTab").hidden);
-+
-+  const tabCount = tabmail.tabInfo.length;
-+  const hidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
-+  menu.activateItem(win.document.getElementById("contextOpenTab"));
-+  await hidden;
-+  await TestUtils.waitForCondition(() => tabmail.tabInfo.length == tabCount + 1, "tab opened");
-+  const tab = tabmail.currentTabInfo;
++  const tab = await openRowInTab("page.html");
 +  await TestUtils.waitForCondition(
 +    () => tab.browser.currentURI?.spec.endsWith(".html"),
 +    "wrapper page shown in the tab"
@@ -12493,6 +12684,88 @@ index 00000000000..b0aef73a579
 +  );
 +  Assert.equal(result.text, "Hello page");
 +  Assert.equal(result.title, "page", "scripts in pages opened in a tab do not run");
++  tabmail.closeTab(tab);
++});
++
++add_task(async function test_open_markdown_in_tab() {
++  const tab = await openRowInTab("readme.md");
++  await TestUtils.waitForCondition(
++    () => tab.browser.currentURI?.spec.endsWith("readme.md.html"),
++    "rendered Markdown page shown in the tab"
++  );
++  const pageURL = tab.browser.currentURI.spec;
++  const result = await SpecialPowers.spawn(tab.browser, [], async () => {
++    await ContentTaskUtils.waitForCondition(
++      () => content.document.querySelector("article.rendered h1"),
++      "Markdown rendered"
++    );
++    const doc = content.document;
++    const article = doc.querySelector("article.rendered");
++    const source = doc.querySelector("pre.source");
++    const shown = () => ({
++      renderedShown: content.getComputedStyle(article).display != "none",
++      sourceShown: content.getComputedStyle(source).display != "none",
++    });
++    const before = shown();
++    doc.getElementById("view-source").click();
++    const after = shown();
++    doc.getElementById("view-rendered").click();
++    return {
++      title: doc.title,
++      h1: article.querySelector("h1").textContent,
++      strong: article.querySelector("strong")?.textContent,
++      rawB: !!article.querySelector("b"),
++      text: article.textContent,
++      cells: article.querySelectorAll("table td").length,
++      checked: article.querySelector("input[type=checkbox]")?.checked,
++      hrefs: [...article.querySelectorAll("a")].map(a => a.getAttribute("href")),
++      images: article.querySelectorAll("img").length,
++      scripts: doc.querySelectorAll("script").length,
++      source: source.textContent,
++      before,
++      after,
++    };
++  });
++  Assert.equal(result.title, "readme.md");
++  Assert.equal(result.h1, "Read me");
++  Assert.equal(result.strong, "bold");
++  Assert.ok(!result.rawB, "raw HTML is not rendered");
++  Assert.ok(result.text.includes("<b>raw</b>"), "raw HTML is shown as text");
++  Assert.equal(result.cells, 2, "table");
++  Assert.ok(result.checked, "task item");
++  Assert.deepEqual(
++    result.hrefs.filter(Boolean),
++    ["https://example.com/", "https://example.com/x.png"],
++    "only safe links"
++  );
++  Assert.equal(result.images, 0, "remote images are not loaded");
++  Assert.equal(result.scripts, 0, "no scripts");
++  Assert.equal(result.source, MARKDOWN, "source view has the file text");
++  Assert.deepEqual(result.before, { renderedShown: true, sourceShown: false });
++  Assert.deepEqual(result.after, { renderedShown: false, sourceShown: true });
++
++  // Links open in the system browser; the tab stays on the page.
++  MockExternalProtocolService.init();
++  try {
++    const opened = MockExternalProtocolService.promiseLoad();
++    await BrowserTestUtils.synthesizeMouseAtCenter(
++      'a[href="https://example.com/"]',
++      {},
++      tab.browser
++    );
++    Assert.equal(await opened, "https://example.com/", "link opened externally");
++    // Give a navigation a chance to start.
++    await new Promise(resolve => setTimeout(resolve, 500));
++    Assert.equal(tab.browser.currentURI.spec, pageURL, "the tab did not navigate");
++  } finally {
++    MockExternalProtocolService.cleanup();
++    // Opening the link allowed https for the window.
++    for (const perm of Services.perms.all) {
++      if (perm.type == "open-protocol-handler^https") {
++        Services.perms.removePermission(perm);
++      }
++    }
++  }
 +  tabmail.closeTab(tab);
 +});
 +
@@ -13245,10 +13518,10 @@ index 28bfa951b3f..b4960f4de0f 100644
 +account-hub-jmap-totp-invalid = The two-factor code was not accepted
 diff --git a/mail/locales/en-US/messenger/jmapFiles.ftl b/mail/locales/en-US/messenger/jmapFiles.ftl
 new file mode 100644
-index 00000000000..116756319f0
+index 00000000000..3b0c3c7c539
 --- /dev/null
 +++ b/mail/locales/en-US/messenger/jmapFiles.ftl
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,231 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13382,6 +13655,11 @@ index 00000000000..116756319f0
 +jmap-files-preview-open-tab = Open in Tab
 +jmap-files-preview-open-external = Open in App
 +jmap-files-preview-download = Download…
++jmap-files-markdown-rendered = Rendered
++jmap-files-markdown-source = Source
++jmap-files-markdown-view-label = Markdown view
++jmap-files-markdown-view =
++    .aria-label = Markdown view
 +jmap-files-preview-actual-size =
 +    .title = Show actual size
 +    .aria-label = Show actual size
@@ -16090,6 +16368,228 @@ index 63fd6c0f63e..d34cd59caac 100644
                  ) {
                    continue;
                  }
+diff --git a/mailnews/db/gloda/modules/GlodaMsgSearcher.sys.mjs b/mailnews/db/gloda/modules/GlodaMsgSearcher.sys.mjs
+index e766e7645e0..8d8e11413a9 100644
+--- a/mailnews/db/gloda/modules/GlodaMsgSearcher.sys.mjs
++++ b/mailnews/db/gloda/modules/GlodaMsgSearcher.sys.mjs
+@@ -5,6 +5,9 @@
+ import { Gloda } from "resource:///modules/gloda/GlodaPublic.sys.mjs";
+ 
+ import { GlodaConstants } from "resource:///modules/gloda/GlodaConstants.sys.mjs";
++import { GlodaMsgIndexer } from "resource:///modules/gloda/IndexMsg.sys.mjs";
++import { MailServices } from "resource:///modules/MailServices.sys.mjs";
++import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
+ 
+ /**
+  * How much time boost should a 'score point' amount to?  The authoritative,
+@@ -136,6 +139,9 @@ var COLUMN_MULTIPLE_MATCH_LIMIT = [10, 0, 0, 0, 0];
+ 
+ /**
+  * Score the message on its offsets (from stashedColumns).
++ *
++ * @param aMessage
++ * @param aContext
+  */
+ function scoreOffsets(aMessage, aContext) {
+   let score = 0;
+@@ -195,6 +201,93 @@ function scoreOffsets(aMessage, aContext) {
+  *  mechanism to explicitly score the messages given the search context in
+  *  addition to the more generic score adjusting rules.
+  */
++/**
++ * How long the results tab waits for JMAP servers to answer, in ms.
++ */
++const SERVER_SEARCH_TIMEOUT_MS = 8000;
++
++/**
++ * Folders of JMAP accounts that the global search covers (the ones Gloda
++ * indexes).
++ *
++ * @returns {nsIMsgFolder[]}
++ */
++function jmapSearchFolders() {
++  if (Services.io.offline) {
++    return [];
++  }
++  const folders = [];
++  for (const server of MailServices.accounts.allServers) {
++    if (server.type != "jmap") {
++      continue;
++    }
++    try {
++      for (const folder of server.rootFolder.descendants) {
++        if (GlodaMsgIndexer.shouldIndexFolder(folder)) {
++          folders.push(folder);
++        }
++      }
++    } catch (e) {
++      console.warn(`Global search: could not list JMAP folders: ${e}`);
++    }
++  }
++  return folders;
++}
++
++/**
++ * Ask JMAP servers for messages matching `terms` (their full-text index
++ * covers bodies that were never downloaded, so Gloda cannot know them).
++ *
++ * @param {nsIMsgFolder[]} folders
++ * @param {string[]} terms
++ * @param {boolean} andTerms
++ * @returns {Promise<nsIMsgDBHdr[]>}
++ */
++function searchJmapServers(folders, terms, andTerms) {
++  return new Promise(resolve => {
++    const hits = [];
++    let timer = null;
++    const finish = () => {
++      if (timer) {
++        clearTimeout(timer);
++        timer = null;
++        resolve(hits);
++      }
++    };
++    timer = setTimeout(finish, SERVER_SEARCH_TIMEOUT_MS);
++    try {
++      const session = Cc[
++        "@mozilla.org/messenger/searchSession;1"
++      ].createInstance(Ci.nsIMsgSearchSession);
++      for (const folder of folders) {
++        session.addScopeTerm(Ci.nsMsgSearchScope.onlineMail, folder);
++      }
++      for (const text of terms) {
++        const term = session.createTerm();
++        term.attrib = Ci.nsMsgSearchAttrib.AnyText;
++        term.op = Ci.nsMsgSearchOp.Contains;
++        const value = term.value;
++        value.attrib = term.attrib;
++        value.str = text;
++        term.value = value;
++        term.booleanAnd = andTerms;
++        session.appendTerm(term);
++      }
++      session.registerListener({
++        onSearchHit(hdr) {
++          hits.push(hdr);
++        },
++        onSearchDone: finish,
++        onNewSearch() {},
++      });
++      session.search(null);
++    } catch (e) {
++      console.warn(`Global search: JMAP server search failed: ${e}`);
++      finish();
++    }
++  });
++}
++
+ export function GlodaMsgSearcher(aListener, aSearchString, aAndTerms) {
+   this.listener = aListener;
+ 
+@@ -220,6 +313,8 @@ GlodaMsgSearcher.prototype = {
+ 
+   /**
+    * Parse the string into terms/phrases by finding matching double-quotes.
++   *
++   * @param aSearchString
+    */
+   parseSearchString(aSearchString) {
+     aSearchString = aSearchString.trim();
+@@ -311,12 +406,82 @@ GlodaMsgSearcher.prototype = {
+     }
+ 
+     this.query = this.buildFulltextQuery();
+-    this.collection = this.query.getCollection(this, aData);
+     this.completed = false;
++    this.scores = null;
++    // JMAP servers search their full-text index in parallel; their hits are
++    //  merged in before the query is reported complete.
++    this._generation = (this._generation ?? 0) + 1;
++    const folders = this.fulltextTerms.length ? jmapSearchFolders() : [];
++    this._serverHits = folders.length
++      ? searchJmapServers(folders, this.fulltextTerms, this.andTerms)
++      : null;
++    this.collection = this.query.getCollection(this, aData);
+ 
+     return this.collection;
+   },
+ 
++  /**
++   * Add the gloda messages for the JMAP server hits that the local fulltext
++   *  query did not find, then report completion. Hits Gloda has not indexed
++   *  yet are queued for indexing so later searches include them.
++   *
++   * @param {GlodaCollection} aCollection
++   */
++  async _mergeServerHits(aCollection) {
++    const generation = this._generation;
++    let headers = [];
++    try {
++      headers = await this._serverHits;
++    } catch (e) {}
++    const added = [];
++    if (headers.length && generation == this._generation) {
++      const unindexed = headers.filter(hdr => !Gloda.isMessageIndexed(hdr));
++      if (unindexed.length) {
++        GlodaMsgIndexer.indexMessages(
++          unindexed.map(hdr => [hdr.folder, hdr.messageKey])
++        );
++      }
++      const indexed = headers.filter(hdr => Gloda.isMessageIndexed(hdr));
++      if (indexed.length) {
++        const items = await new Promise(resolve => {
++          Gloda.getMessageCollectionForHeaders(indexed, {
++            onItemsAdded() {},
++            onItemsModified() {},
++            onItemsRemoved() {},
++            onQueryCompleted(coll) {
++              resolve(coll.items);
++            },
++          });
++        });
++        for (const item of items) {
++          if (!(item.id in aCollection._idMap)) {
++            aCollection._idMap[item.id] = item;
++            aCollection.items.push(item);
++            added.push(item);
++          }
++        }
++      }
++    }
++    if (generation != this._generation) {
++      return;
++    }
++    if (added.length) {
++      // No fulltext offsets for these; give them the lowest local score.
++      this.scores = this.scores ?? [];
++      const floor = this.scores.length ? Math.min(...this.scores) : 0;
++      for (let i = 0; i < added.length; i++) {
++        this.scores.push(floor);
++      }
++      if (this.listener) {
++        this.listener.onItemsAdded(added, aCollection);
++      }
++    }
++    this.completed = true;
++    if (this.listener) {
++      this.listener.onQueryCompleted(aCollection);
++    }
++  },
++
+   sortBy: "-dascore",
+ 
+   onItemsAdded(aItems, aCollection) {
+@@ -349,6 +514,10 @@ GlodaMsgSearcher.prototype = {
+     }
+   },
+   onQueryCompleted(aCollection) {
++    if (this._serverHits) {
++      this._mergeServerHits(aCollection);
++      return;
++    }
+     this.completed = true;
+     if (this.listener) {
+       this.listener.onQueryCompleted(aCollection);
 diff --git a/mailnews/jar.mn b/mailnews/jar.mn
 index 6f043514142..2aa255a5816 100644
 --- a/mailnews/jar.mn
@@ -27181,10 +27681,10 @@ index 00000000000..05c30a26dc0
 +#endif  // COMM_MAILNEWS_PROTOCOLS_JMAP_SRC_JMAPFETCHMSGSTOOFFLINE_H_
 diff --git a/mailnews/protocols/jmap/src/JmapFolder.cpp b/mailnews/protocols/jmap/src/JmapFolder.cpp
 new file mode 100644
-index 00000000000..8b3d13a7491
+index 00000000000..84e55a4e4da
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapFolder.cpp
-@@ -0,0 +1,1658 @@
+@@ -0,0 +1,1674 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27530,6 +28030,22 @@ index 00000000000..8b3d13a7491
 +
 +NS_IMETHODIMP JmapFolder::GetIncomingServerType(nsACString& aServerType) {
 +  aServerType.AssignLiteral("jmap");
++  return NS_OK;
++}
++
++// Mail folders carry the Mail flag; Gloda (global search) and other
++// consumers ignore folders without it. Folders created by older builds
++// persisted their flags without it, so add it whenever the flags are read.
++NS_IMETHODIMP JmapFolder::GetFlags(uint32_t* aFlags) {
++  NS_ENSURE_ARG_POINTER(aFlags);
++  nsresult rv = nsMsgDBFolder::GetFlags(aFlags);
++  NS_ENSURE_SUCCESS(rv, rv);
++  bool isServer = false;
++  GetIsServer(&isServer);
++  if (!isServer && !(mFlags & nsMsgFolderFlags::Mail)) {
++    mFlags |= nsMsgFolderFlags::Mail;
++    *aFlags = mFlags;
++  }
 +  return NS_OK;
 +}
 +
@@ -28845,10 +29361,10 @@ index 00000000000..8b3d13a7491
 +}
 diff --git a/mailnews/protocols/jmap/src/JmapFolder.h b/mailnews/protocols/jmap/src/JmapFolder.h
 new file mode 100644
-index 00000000000..376305cf140
+index 00000000000..def1dd8ff2d
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapFolder.h
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,169 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28879,6 +29395,7 @@ index 00000000000..376305cf140
 +
 +  // nsIMsgFolder
 +  NS_IMETHOD GetIncomingServerType(nsACString& aServerType) override;
++  NS_IMETHOD GetFlags(uint32_t* aFlags) override;
 +  NS_IMETHOD GetSupportsOffline(bool* supportsOffline) override;
 +  NS_IMETHOD GetDeletable(bool* deletable) override;
 +  NS_IMETHOD GetCanCreateSubfolders(bool* canCreateSubfolders) override;
@@ -29019,10 +29536,10 @@ index 00000000000..376305cf140
 +#endif  // COMM_MAILNEWS_PROTOCOLS_JMAP_SRC_JMAPFOLDER_H_
 diff --git a/mailnews/protocols/jmap/src/JmapIncomingServer.cpp b/mailnews/protocols/jmap/src/JmapIncomingServer.cpp
 new file mode 100644
-index 00000000000..baae5707546
+index 00000000000..04a20637783
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapIncomingServer.cpp
-@@ -0,0 +1,455 @@
+@@ -0,0 +1,456 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29036,6 +29553,7 @@ index 00000000000..baae5707546
 +#include "JmapListeners.h"
 +#include "mozilla/Components.h"
 +#include "nsIMsgFolderNotificationService.h"
++#include "nsMsgFolderFlags.h"
 +#include "nsIMsgPluggableStore.h"
 +#include "nsMsgSearchCore.h"
 +#include "nsMsgUtils.h"
@@ -29171,7 +29689,7 @@ index 00000000000..baae5707546
 +  rv = newFolder->SetStringProperty("jmapId", id);
 +  NS_ENSURE_SUCCESS(rv, rv);
 +
-+  rv = newFolder->SetFlags(flags);
++  rv = newFolder->SetFlags(flags | nsMsgFolderFlags::Mail);
 +  NS_ENSURE_SUCCESS(rv, rv);
 +
 +  rv = newFolder->SetName(folderName);
@@ -33076,6 +33594,187 @@ index 00000000000..3182ddfaaa5
 +  await service.refresh();
 +  Assert.ok(!service.getNode(upload.nodeId), "FileLink upload deleted");
 +});
+diff --git a/mailnews/protocols/jmap/test/live/test_live_gloda.js b/mailnews/protocols/jmap/test/live/test_live_gloda.js
+new file mode 100644
+index 00000000000..3f35c5fa6b3
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/live/test_live_gloda.js
+@@ -0,0 +1,175 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Live global search: messages synced from Stalwart are indexed by Gloda and
++ * found by the same fulltext query the search results tab runs
++ * (GlodaMsgSearcher), both for the initial sync and for mail that arrives
++ * later.
++ */
++
++var { Gloda } = ChromeUtils.importESModule(
++  "resource:///modules/gloda/GlodaPublic.sys.mjs"
++);
++var { GlodaIndexer } = ChromeUtils.importESModule(
++  "resource:///modules/gloda/GlodaIndexer.sys.mjs"
++);
++var { GlodaMsgSearcher } = ChromeUtils.importESModule(
++  "resource:///modules/gloda/GlodaMsgSearcher.sys.mjs"
++);
++
++let alice;
++const TOKEN1 = `walrus${RUN_ID}`;
++const TOKEN2 = `narwhal${RUN_ID}`;
++const SUBJECT1 = `Live gloda one ${RUN_ID}`;
++const SUBJECT2 = `Live gloda two ${RUN_ID}`;
++
++add_setup(async function () {
++  if (!LIVE_CONFIG) {
++    return;
++  }
++  Assert.ok(GlodaIndexer.enabled, "the global indexer is on");
++  GlodaIndexer._INDEX_INTERVAL = 0;
++  // Gloda keeps its database open until shutdown; close it like the Gloda
++  // tests do.
++  registerCleanupFunction(() =>
++    load("../../../../../mailnews/resources/mailShutdown.js")
++  );
++  alice = await createLiveAccount("alice@test.localhost");
++  registerCleanupFunction(() => destroyBySubject(alice.server, SUBJECT1));
++  registerCleanupFunction(() => destroyBySubject(alice.server, SUBJECT2));
++});
++
++/**
++ * Run the results-tab query for `text`; resolves with the subjects found.
++ *
++ * @param {string} text
++ * @returns {Promise<string[]>}
++ */
++function glodaSearch(text) {
++  return new Promise(resolve => {
++    const searcher = new GlodaMsgSearcher(
++      {
++        onItemsAdded() {},
++        onItemsModified() {},
++        onItemsRemoved() {},
++        onQueryCompleted(collection) {
++          resolve(collection.items.map(m => m.subject));
++        },
++      },
++      text
++    );
++    searcher.getCollection();
++  });
++}
++
++/**
++ * Append a message to the server Inbox.
++ *
++ * @param {string} subject
++ * @param {string} body
++ */
++async function appendMessage(subject, body) {
++  const inbox = folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox);
++  const file = await writeMessageFile({
++    from: alice.email,
++    to: alice.email,
++    subject,
++    body,
++  });
++  const copyListener = new PromiseTestUtils.PromiseCopyListener();
++  MailServices.copy.copyFileMessage(
++    file,
++    inbox,
++    null,
++    false,
++    0,
++    "",
++    copyListener,
++    null
++  );
++  await copyListener.promise;
++}
++
++function describe(subject) {
++  const inbox = folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox);
++  const hdr = findHeader(inbox, subject);
++  if (!hdr) {
++    return "no header";
++  }
++  return `key=${hdr.messageKey} flags=${hdr.flags.toString(16)} gloda-id=${hdr.getUint32Property("gloda-id")} dirty=${hdr.getUint32Property("gloda-dirty")} folderFlags=${inbox.flags.toString(16)} indexing=${GlodaIndexer.indexing}`;
++}
++
++add_live_task(async function test_globalSearchFindsJmapMail() {
++  await syncAll(alice.server);
++  await appendMessage(SUBJECT1, `The animal is ${TOKEN1} here.`);
++  await waitForHeader(
++    alice.server,
++    () => folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox),
++    SUBJECT1
++  );
++
++  info(`after sync: ${describe(SUBJECT1)}`);
++  // Gloda indexes the synced header.
++  await pollUntil(
++    () => {
++      const inbox = folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox);
++      const hdr = findHeader(inbox, SUBJECT1);
++      return hdr && Gloda.isMessageIndexed(hdr);
++    },
++    "gloda indexes the synced message",
++    15000
++  ).catch(e => {
++    info(`state: ${describe(SUBJECT1)}`);
++    throw e;
++  });
++  let subjects = [];
++  try {
++    await pollUntil(
++      async () => {
++        subjects = await glodaSearch(TOKEN1);
++        return subjects.includes(SUBJECT1);
++      },
++      "the results tab finds the synced message by its body",
++      15000
++    );
++  } catch (e) {
++    info(`state: ${describe(SUBJECT1)}`);
++    throw e;
++  }
++  subjects = await glodaSearch(`gloda one ${RUN_ID}`);
++  Assert.ok(subjects.includes(SUBJECT1), "subject words match too");
++
++  // Mail arriving later (an incremental sync) is indexed as well.
++  await appendMessage(SUBJECT2, `Another animal: ${TOKEN2}.`);
++  await waitForHeader(
++    alice.server,
++    () => folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox),
++    SUBJECT2
++  );
++  try {
++    await pollUntil(
++      async () => {
++        subjects = await glodaSearch(TOKEN2);
++        return subjects.includes(SUBJECT2);
++      },
++      "the results tab finds the newest message",
++      15000
++    );
++  } catch (e) {
++    info(`state: ${describe(SUBJECT2)}`);
++    throw e;
++  }
++  await pollUntil(
++    () => {
++      const inbox = folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox);
++      const hdr = findHeader(inbox, SUBJECT2);
++      return hdr && Gloda.isMessageIndexed(hdr);
++    },
++    "gloda indexes the newest message",
++    15000
++  );
++  subjects = await glodaSearch(`gloda two ${RUN_ID}`);
++  Assert.ok(subjects.includes(SUBJECT2), "its subject is in the local index");
++});
 diff --git a/mailnews/protocols/jmap/test/live/test_live_mail.js b/mailnews/protocols/jmap/test/live/test_live_mail.js
 new file mode 100644
 index 00000000000..e0e3dc8d194
@@ -34053,10 +34752,10 @@ index 00000000000..c87d51cbe8e
 +});
 diff --git a/mailnews/protocols/jmap/test/live/xpcshell.toml b/mailnews/protocols/jmap/test/live/xpcshell.toml
 new file mode 100644
-index 00000000000..ae0d30be1e2
+index 00000000000..8478177160f
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/live/xpcshell.toml
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,26 @@
 +[DEFAULT]
 +# LIVE tests against a local Stalwart JMAP server on 127.0.0.1:8080.
 +# Tasks skip themselves when $JMAP_LIVE_ACCOUNTS (or the default account
@@ -34080,6 +34779,9 @@ index 00000000000..ae0d30be1e2
 +["test_live_oauth_account.js"]
 +
 +["test_live_oauth_password.js"]
++
++["test_live_gloda.js"]
++prefs = ["gloda.loglevel=Debug"]
 diff --git a/mailnews/protocols/jmap/test/moz.build b/mailnews/protocols/jmap/test/moz.build
 new file mode 100644
 index 00000000000..20180627b07
@@ -38033,10 +38735,10 @@ index 00000000000..cf0e4435ebc
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_search.js b/mailnews/protocols/jmap/test/unit/test_jmap_search.js
 new file mode 100644
-index 00000000000..3abb6ee65b4
+index 00000000000..b5c27b3afb8
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/test_jmap_search.js
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,447 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38103,7 +38805,12 @@ index 00000000000..3abb6ee65b4
 +  const account = MailServices.accounts.createAccount();
 +  account.incomingServer = server;
 +  server.QueryInterface(Ci.IJmapIncomingServer);
-+  server.createFolderForMailbox("mb-inbox", "", "Inbox", Ci.nsMsgFolderFlags.Inbox);
++  server.createFolderForMailbox(
++    "mb-inbox",
++    "",
++    "Inbox",
++    Ci.nsMsgFolderFlags.Inbox
++  );
 +  server.createFolderForMailbox("mb-other", "", "Other", 0);
 +  inbox = server.rootFolder.getChildNamed("Inbox");
 +  other = server.rootFolder.getChildNamed("Other");
@@ -38124,7 +38831,11 @@ index 00000000000..3abb6ee65b4
 +  add(other, "e4", "Other folder");
 +
 +  registerCleanupFunction(() => {
-+    MailServices.accounts.removeAccount(account, false);
++    try {
++      MailServices.accounts.removeAccount(account, false);
++    } catch (e) {
++      // Already shut down by the Gloda task.
++    }
 +  });
 +});
 +
@@ -38133,11 +38844,26 @@ index 00000000000..3abb6ee65b4
 + *
 + * @param {nsIMsgSearchSession} session
 + * @param {object} spec
++ * @param spec.attrib
++ * @param spec.op
++ * @param spec.str
++ * @param spec.status
++ * @param spec.and
++ * @param spec.begins
++ * @param spec.ends
 + * @returns {nsIMsgSearchTerm}
 + */
 +function makeTerm(
 +  session,
-+  { attrib, op = Ci.nsMsgSearchOp.Contains, str, status, and = true, begins = false, ends = false }
++  {
++    attrib,
++    op = Ci.nsMsgSearchOp.Contains,
++    str,
++    status,
++    and = true,
++    begins = false,
++    ends = false,
++  }
 +) {
 +  const term = session.createTerm();
 +  term.attrib = attrib;
@@ -38165,9 +38891,9 @@ index 00000000000..3abb6ee65b4
 + * @returns {Promise<{subjects: string[], status: number, filters: object[]}>}
 + */
 +async function runSearch(folders, specs) {
-+  const session = Cc[
-+    "@mozilla.org/messenger/searchSession;1"
-+  ].createInstance(Ci.nsIMsgSearchSession);
++  const session = Cc["@mozilla.org/messenger/searchSession;1"].createInstance(
++    Ci.nsIMsgSearchSession
++  );
 +  for (const folder of folders) {
 +    session.addScopeTerm(Ci.nsMsgSearchScope.onlineMail, folder);
 +  }
@@ -38291,7 +39017,11 @@ index 00000000000..3abb6ee65b4
 +    [{ attrib: A.AnyText, str: "a" }]
 +  );
 +  Assert.equal(filters.length, 2, "one query per folder");
-+  Assert.deepEqual(subjects, ["Holiday plans", "Invoice March", "Other folder"]);
++  Assert.deepEqual(subjects, [
++    "Holiday plans",
++    "Invoice March",
++    "Other folder",
++  ]);
 +});
 +
 +add_task(function test_server_scope() {
@@ -38307,7 +39037,10 @@ index 00000000000..3abb6ee65b4
 +      classified.push(...msgs.map(m => m.getStringProperty("jmapId")));
 +    },
 +  };
-+  MailServices.mfn.addListener(listener, Ci.nsIMsgFolderNotificationService.msgsClassified);
++  MailServices.mfn.addListener(
++    listener,
++    Ci.nsIMsgFolderNotificationService.msgsClassified
++  );
 +
 +  const store = new JmapFolderStore({
 +    server: { createFolderForMailbox() {} },
@@ -38337,14 +39070,20 @@ index 00000000000..3abb6ee65b4
 +  MailServices.mfn.removeListener(listener);
 +
 +  // (The junk classifier may announce e6 on its own, asynchronously.)
-+  Assert.deepEqual(
-+    classified.filter(id => id != "e6").sort(),
-+    ["e1", "e2", "e3", "e4", "e5"]
-+  );
++  Assert.deepEqual(classified.filter(id => id != "e6").sort(), [
++    "e1",
++    "e2",
++    "e3",
++    "e4",
++    "e5",
++  ]);
 +
 +  // A second store in the same session does not re-announce old headers.
 +  classified.length = 0;
-+  MailServices.mfn.addListener(listener, Ci.nsIMsgFolderNotificationService.msgsClassified);
++  MailServices.mfn.addListener(
++    listener,
++    Ci.nsIMsgFolderNotificationService.msgsClassified
++  );
 +  const again = new JmapFolderStore({
 +    server: { createFolderForMailbox() {} },
 +    rootFolder: server.rootFolder,
@@ -38353,6 +39092,99 @@ index 00000000000..3abb6ee65b4
 +  await again.flush();
 +  MailServices.mfn.removeListener(listener);
 +  Assert.deepEqual(classified, []);
++});
++
++/**
++ * Run the query of the global search results tab.
++ *
++ * @param {string} text
++ * @returns {Promise<string[]>} the subjects found
++ */
++function globalSearch(text) {
++  const { GlodaMsgSearcher } = ChromeUtils.importESModule(
++    "resource:///modules/gloda/GlodaMsgSearcher.sys.mjs"
++  );
++  return new Promise(resolve => {
++    new GlodaMsgSearcher(
++      {
++        onItemsAdded() {},
++        onItemsModified() {},
++        onItemsRemoved() {},
++        onQueryCompleted(collection) {
++          resolve(collection.items.map(m => m.subject).sort());
++        },
++      },
++      text
++    ).getCollection();
++  });
++}
++
++add_task(async function test_global_search_finds_jmap_messages() {
++  Services.prefs.setBoolPref("mailnews.database.global.indexer.enabled", true);
++  const { Gloda } = ChromeUtils.importESModule(
++    "resource:///modules/gloda/GlodaPublic.sys.mjs"
++  );
++  const { GlodaIndexer } = ChromeUtils.importESModule(
++    "resource:///modules/gloda/GlodaIndexer.sys.mjs"
++  );
++  const { GlodaMsgIndexer } = ChromeUtils.importESModule(
++    "resource:///modules/gloda/IndexMsg.sys.mjs"
++  );
++  Assert.ok(GlodaIndexer.enabled);
++  GlodaIndexer._INDEX_INTERVAL = 0;
++  // Gloda keeps its database open until shutdown; close it like the Gloda
++  // tests do.
++  registerCleanupFunction(() =>
++    load("../../../../../mailnews/resources/mailShutdown.js")
++  );
++
++  // JMAP folders are mail folders; Gloda skips folders without the flag.
++  // Folders of older profiles lack it in their cached flags.
++  other.clearFlag(Ci.nsMsgFolderFlags.Mail);
++  for (const folder of [inbox, other]) {
++    Assert.ok(
++      folder.flags & Ci.nsMsgFolderFlags.Mail,
++      `${folder.name} is mail`
++    );
++    Assert.ok(GlodaMsgIndexer.shouldIndexFolder(folder));
++  }
++
++  // Folders Gloda first sees with messages in them are "filthy": the
++  // indexing sweep (run at startup) walks them; msgsClassified for new mail
++  // is handled once they are clean.
++  const headers = [inbox, other].flatMap(f => [
++    ...f.msgDatabase.enumerateMessages(),
++  ]);
++  GlodaMsgIndexer.indexingSweepNeeded = true;
++  await TestUtils.waitForCondition(
++    () => headers.every(h => Gloda.isMessageIndexed(h)),
++    "Gloda indexes the JMAP messages",
++    200,
++    100
++  );
++  await TestUtils.waitForCondition(() => !GlodaIndexer.indexing);
++
++  // Local matches (headers) come from Gloda; the server is asked as well.
++  mockClient.answer = [];
++  Assert.deepEqual(await globalSearch("invoice"), ["Invoice March"]);
++  Assert.deepEqual(await globalSearch("folder"), ["Other folder"]);
++  Assert.ok(
++    mockClient.queries.some(q => JSON.stringify(q).includes('"text":"folder"')),
++    "the JMAP server full-text index was queried"
++  );
++
++  // A word only in the (never downloaded) body: the server finds it.
++  mockClient.answer = filter =>
++    filter.conditions[0].inMailbox == "mb-inbox" ? ["e2"] : [];
++  Assert.deepEqual(await globalSearch("bodyonlyword"), ["Holiday plans"]);
++
++  // Offline, only the local index is used.
++  Services.io.offline = true;
++  try {
++    Assert.deepEqual(await globalSearch("bodyonlyword"), []);
++  } finally {
++    Services.io.offline = false;
++  }
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_session.js b/mailnews/protocols/jmap/test/unit/test_jmap_session.js
 new file mode 100644
