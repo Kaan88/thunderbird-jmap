@@ -6370,10 +6370,10 @@ index 600afd881d2..3305a0c44e7 100644
  (function () {
 diff --git a/mail/components/jmapfiles/content/jmapFiles.css b/mail/components/jmapfiles/content/jmapFiles.css
 new file mode 100644
-index 00000000000..3aca86959f7
+index 00000000000..feb25f45a54
 --- /dev/null
 +++ b/mail/components/jmapfiles/content/jmapFiles.css
-@@ -0,0 +1,842 @@
+@@ -0,0 +1,964 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6881,7 +6881,8 @@ index 00000000000..3aca86959f7
 +
 +.preview-content[data-kind="text"],
 +.preview-content[data-kind="json"],
-+.preview-content[data-kind="csv"] {
++.preview-content[data-kind="csv"],
++.preview-content[data-kind="markdown"] {
 +  justify-content: flex-start;
 +}
 +
@@ -6997,6 +6998,127 @@ index 00000000000..3aca86959f7
 +  overflow-wrap: anywhere;
 +  tab-size: 4;
 +  user-select: text;
++}
++
++.preview-markdown {
++  padding: 4px 16px 12px;
++  line-height: 1.55;
++  overflow-wrap: break-word;
++  user-select: text;
++}
++
++.preview-markdown :is(h1, h2, h3, h4, h5, h6) {
++  margin: 1em 0 0.5em;
++  line-height: 1.25;
++  font-weight: 600;
++}
++
++.preview-markdown h1 {
++  font-size: 1.6em;
++}
++
++.preview-markdown h2 {
++  font-size: 1.35em;
++}
++
++.preview-markdown :is(h1, h2) {
++  padding-block-end: 0.25em;
++  border-block-end: 1px solid var(--files-border);
++}
++
++.preview-markdown h3 {
++  font-size: 1.15em;
++}
++
++.preview-markdown :is(p, ul, ol, blockquote, pre, table) {
++  margin: 0 0 0.8em;
++}
++
++.preview-markdown :is(ul, ol) {
++  padding-inline-start: 1.8em;
++}
++
++.preview-markdown :is(ul, ol) :is(ul, ol) {
++  margin-block-end: 0;
++}
++
++.preview-markdown .contains-task-list {
++  list-style: none;
++  padding-inline-start: 1.2em;
++}
++
++.preview-markdown .task-list-item input {
++  margin: 0 0.3em 0 -1.2em;
++  vertical-align: middle;
++}
++
++.preview-markdown blockquote {
++  padding: 0 1em;
++  border-inline-start: 3px solid var(--files-border);
++  color: var(--files-muted);
++}
++
++.preview-markdown code {
++  padding: 0.1em 0.3em;
++  border-radius: 3px;
++  background-color: var(--files-pressed);
++  font-family: monospace;
++  font-size: 0.9em;
++}
++
++.preview-markdown pre {
++  padding: 8px 12px;
++  border: 1px solid var(--files-border);
++  border-radius: var(--files-radius);
++  background-color: var(--files-panel);
++  overflow: auto;
++  line-height: 1.45;
++  tab-size: 4;
++}
++
++.preview-markdown pre code {
++  padding: 0;
++  background: none;
++  font-size: 0.9em;
++}
++
++.preview-markdown hr {
++  height: 0;
++  margin: 1.2em 0;
++  border: none;
++  border-block-start: 1px solid var(--files-border);
++}
++
++.preview-markdown table {
++  display: block;
++  max-width: 100%;
++  overflow: auto;
++  border-collapse: collapse;
++}
++
++.preview-markdown :is(th, td) {
++  padding: 4px 10px;
++  border: 1px solid var(--files-border);
++}
++
++.preview-markdown th {
++  background-color: var(--files-toolbar);
++  font-weight: 600;
++}
++
++.preview-markdown img {
++  max-width: 100%;
++}
++
++.preview-markdown-link {
++  color: var(--files-accent);
++  text-decoration: underline;
++  cursor: pointer;
++}
++
++.preview-markdown-link:focus-visible {
++  outline: var(--files-focus-outline);
++  outline-offset: 1px;
 +}
 +
 +.preview-table-wrapper {
@@ -8072,10 +8194,10 @@ index 00000000000..d69ce9167fa
 +</html>
 diff --git a/mail/components/jmapfiles/content/jmapFilesPreview.js b/mail/components/jmapfiles/content/jmapFilesPreview.js
 new file mode 100644
-index 00000000000..ca8efa8e936
+index 00000000000..4f62b930d19
 --- /dev/null
 +++ b/mail/components/jmapfiles/content/jmapFilesPreview.js
-@@ -0,0 +1,1084 @@
+@@ -0,0 +1,1214 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8090,6 +8212,9 @@ index 00000000000..ca8efa8e936
 + * HTML pages are shown in a sandboxed iframe (no scripts, forms, popups or
 + * remote loads) inside a wrapper page written to a temporary file. Text and
 + * code are shown as plain text, JSON pretty-printed and CSV as a table.
++ * Markdown is converted (all source HTML escaped) and the result rebuilt
++ * element by element from an allow-list; its links open in the system
++ * browser and only data: images are shown, so nothing loads remotely.
 + */
 +
 +var { MailE10SUtils } = ChromeUtils.importESModule(
@@ -8097,6 +8222,9 @@ index 00000000000..ca8efa8e936
 +);
 +var { DownloadPaths } = ChromeUtils.importESModule(
 +  "resource://gre/modules/DownloadPaths.sys.mjs"
++);
++var { markdownToHTML, safeLinkURL, safeImageURL, ALLOWED_ELEMENTS } = ChromeUtils.importESModule(
++  "resource:///modules/jmapfiles/JmapFilesMarkdown.sys.mjs"
 +);
 +
 +/** Largest file downloaded automatically for a preview. */
@@ -8154,7 +8282,7 @@ index 00000000000..ca8efa8e936
 +/** Extensions of plain-text formats (shown as text whatever the server says). */
 +const TEXT_EXTENSIONS = new Set(
 +  (
-+    "txt text log md markdown rst adoc org tex bib ini cfg conf config env " +
++    "txt text log md markdown mdown mkd mkdn rst adoc org tex bib ini cfg conf config env " +
 +    "properties toml yaml yml xml xsd xsl plist rss atom ics vcf eml " +
 +    "js mjs cjs jsx ts tsx css scss sass less vue svelte " +
 +    "c h cc cpp cxx hpp hh cs java kt kts scala go rs swift m mm py pyw rb " +
@@ -8163,6 +8291,9 @@ index 00000000000..ca8efa8e936
 +    "diff patch srt vtt sub ftl dtd idl webidl"
 +  ).split(" ")
 +);
++
++/** Extensions of Markdown files (rendered rather than shown as text). */
++const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdown", "mkd", "mkdn"]);
 +
 +/** Extensions never launched from the server; the file is revealed instead. */
 +const DANGEROUS_EXTENSIONS = new Set(
@@ -8269,7 +8400,7 @@ index 00000000000..ca8efa8e936
 + *
 + * @param {object} node
 + * @returns {{kind: string, type: string}} kind is one of image, audio,
-+ *   video, pdf, html, json, csv, text or none.
++ *   video, pdf, html, json, csv, markdown, text or none.
 + */
 +function previewKind(node) {
 +  const ext = extensionOf(node.name ?? "");
@@ -8296,6 +8427,12 @@ index 00000000000..ca8efa8e936
 +    kind = "json";
 +  } else if (type == "text/csv" || type == "text/tab-separated-values") {
 +    kind = "csv";
++  } else if (
++    MARKDOWN_EXTENSIONS.has(ext)
++      ? type.startsWith("text/") || type == "application/octet-stream"
++      : type == "text/markdown" || type == "text/x-markdown"
++  ) {
++    kind = "markdown";
 +  } else if (TEXT_EXTENSIONS.has(ext) || TEXT_TYPES.some(re => re.test(type))) {
 +    kind = "text";
 +  }
@@ -8465,7 +8602,7 @@ index 00000000000..ca8efa8e936
 +      ["jmap-files-preview-created", this._date(node.created)],
 +    ]);
 +    const actions = ["download", "open-external"];
-+    if (["pdf", "html", "image", "video", "audio", "text", "json", "csv"].includes(kind)) {
++    if (["pdf", "html", "image", "video", "audio", "text", "markdown", "json", "csv"].includes(kind)) {
 +      actions.unshift("open-tab");
 +    }
 +    this._setActions(actions);
@@ -8698,6 +8835,15 @@ index 00000000000..ca8efa8e936
 +        this._showTable(rows, truncated || text.truncated);
 +        break;
 +      }
++      case "markdown": {
++        const text = await this._text(blob);
++        if (text.binary) {
++          this._message("jmap-files-preview-unsupported");
++          return;
++        }
++        this._showMarkdown(text.value, text.truncated);
++        break;
++      }
 +      case "text": {
 +        const text = await this._text(blob);
 +        if (text.binary) {
@@ -8707,6 +8853,111 @@ index 00000000000..ca8efa8e936
 +        this._showText(text.value, text.truncated);
 +        break;
 +      }
++    }
++  }
++
++  _showMarkdown(value, truncated) {
++    const article = document.createElement("article");
++    article.className = "preview-markdown";
++    article.dir = "auto";
++    // An inert document: nothing in it runs or loads.
++    const parsed = new DOMParser().parseFromString(
++      `<!DOCTYPE html><body>${markdownToHTML(value)}</body>`,
++      "text/html"
++    );
++    article.append(...this._copyMarkdownNodes(parsed.body.childNodes));
++    this.el.content.append(article);
++    if (truncated) {
++      this._note("jmap-files-preview-truncated");
++    }
++  }
++
++  /**
++   * Rebuild converted Markdown in this document, keeping only the elements
++   * and attributes the converter makes. Links get no href (so nothing can
++   * navigate this page) and open in the system browser instead.
++   */
++  _copyMarkdownNodes(nodes) {
++    const copies = [];
++    for (const node of nodes) {
++      if (node.nodeType == Node.TEXT_NODE) {
++        copies.push(document.createTextNode(node.data));
++        continue;
++      }
++      if (node.nodeType != Node.ELEMENT_NODE) {
++        continue;
++      }
++      const tag = node.localName;
++      const attributes = Object.hasOwn(ALLOWED_ELEMENTS, tag) ? ALLOWED_ELEMENTS[tag] : null;
++      if (!attributes) {
++        // Unknown: keep only its text.
++        copies.push(...this._copyMarkdownNodes(node.childNodes));
++        continue;
++      }
++      const copy = document.createElement(tag);
++      for (const name of attributes) {
++        const attrValue = node.getAttribute(name);
++        if (attrValue === null || name == "href" || name == "src") {
++          continue;
++        }
++        if (tag == "input" && name == "type" && attrValue != "checkbox") {
++          continue;
++        }
++        copy.setAttribute(name, attrValue);
++      }
++      if (tag == "input") {
++        copy.type = "checkbox";
++        copy.disabled = true;
++      } else if (tag == "img") {
++        const src = safeImageURL(node.getAttribute("src"));
++        if (!src) {
++          continue;
++        }
++        copy.src = src;
++      } else if (tag == "a") {
++        const href = safeLinkURL(node.getAttribute("href"));
++        if (href) {
++          copy.className = "preview-markdown-link";
++          copy.dataset.href = href;
++          copy.setAttribute("role", "link");
++          copy.tabIndex = 0;
++          if (!copy.title) {
++            copy.title = href;
++          }
++          const open = event => {
++            event.preventDefault();
++            event.stopPropagation();
++            this._openLink(href);
++          };
++          copy.addEventListener("click", event => {
++            if (event.button == 0) {
++              open(event);
++            }
++          });
++          copy.addEventListener("keydown", event => {
++            if (event.key == "Enter") {
++              open(event);
++            }
++          });
++        }
++      }
++      copy.append(...this._copyMarkdownNodes(node.childNodes));
++      copies.push(copy);
++    }
++    return copies;
++  }
++
++  /** Open a Markdown link in the system's default application. */
++  _openLink(href) {
++    if (!safeLinkURL(href)) {
++      return;
++    }
++    try {
++      Cc["@mozilla.org/uriloader/external-protocol-service;1"]
++        .getService(Ci.nsIExternalProtocolService)
++        .loadURI(Services.io.newURI(href));
++    } catch (e) {
++      console.error(e);
 +    }
 +  }
 +
@@ -8954,6 +9205,7 @@ index 00000000000..ca8efa8e936
 +        query = "?type=application/pdf";
 +        break;
 +      case "text":
++      case "markdown":
 +      case "json":
 +      case "csv":
 +        file = await this.localCopy(node, withExtension(safeName, "txt"));
@@ -11093,6 +11345,570 @@ index 00000000000..87ee04e3328
 +};
 +
 +export { JmapMethodError };
+diff --git a/mail/components/jmapfiles/modules/JmapFilesMarkdown.sys.mjs b/mail/components/jmapfiles/modules/JmapFilesMarkdown.sys.mjs
+new file mode 100644
+index 00000000000..cc0fa4d05cf
+--- /dev/null
++++ b/mail/components/jmapfiles/modules/JmapFilesMarkdown.sys.mjs
+@@ -0,0 +1,558 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * A small Markdown to HTML converter for the Files preview.
++ *
++ * It covers the common CommonMark and GFM constructs: ATX and setext
++ * headings, paragraphs, emphasis, strong, strikethrough, code spans, fenced
++ * and indented code blocks, block quotes, (nested) ordered, unordered and
++ * task lists, links (inline, reference and autolinks), images, thematic
++ * breaks and tables.
++ *
++ * Safety: every piece of source text is HTML-escaped; raw HTML in the source
++ * is shown as text, never passed through. Links are only made for http(s),
++ * mailto and ftp URLs. Images are only shown inline for data:image URLs;
++ * any other image becomes a link, so that rendering never loads anything
++ * from the network.
++ */
++
++const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
++
++/** HTML-escape text. */
++export function escapeHTML(text) {
++  return String(text).replace(/[&<>"']/g, c => ESCAPES[c]);
++}
++
++/** The URL if it may be linked to, otherwise null. */
++export function safeLinkURL(url) {
++  url = (url ?? "").trim();
++  // Control characters and whitespace can hide a scheme ("java\tscript:").
++  if (/[\u0000-\u001f\u007f\s]/.test(url)) {
++    return null;
++  }
++  return /^(https?:\/\/|mailto:|ftp:\/\/)/i.test(url) ? url : null;
++}
++
++/** The URL if it may be shown as an inline image, otherwise null. */
++export function safeImageURL(url) {
++  url = (url ?? "").trim();
++  return /^data:image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml);base64,[a-z0-9+/=\s]*$/i.test(url)
++    ? url.replace(/\s+/g, "")
++    : null;
++}
++
++const RE_FENCE = /^( {0,3})(`{3,}|~{3,})\s*([^`\s]*)[^`]*$/;
++const RE_ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
++const RE_HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
++const RE_SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
++const RE_QUOTE = /^ {0,3}> ?/;
++const RE_LIST = /^( {0,3})([-*+]|\d{1,9}[.)])([ \t]+|$)(.*)$/;
++const RE_TABLE_DELIM = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
++const RE_REFDEF = /^ {0,3}\[([^\]]+)\]:[ \t]*<?(\S+?)>?(?:[ \t]+(?:"([^"]*)"|'([^']*)'|\(([^)]*)\)))?[ \t]*$/;
++
++function isBlank(line) {
++  return /^[ \t]*$/.test(line);
++}
++
++function expandTabs(line) {
++  if (!line.includes("\t")) {
++    return line;
++  }
++  let out = "";
++  for (const c of line) {
++    out += c == "\t" ? " ".repeat(4 - (out.length % 4)) : c;
++  }
++  return out;
++}
++
++function indentOf(line) {
++  return line.match(/^ */)[0].length;
++}
++
++function normalizeLabel(label) {
++  return label.trim().replace(/\s+/g, " ").toLowerCase();
++}
++
++/** Does this line start a block that interrupts a paragraph? */
++function interruptsParagraph(line) {
++  if (RE_FENCE.test(line) || RE_ATX.test(line) || RE_HR.test(line) || RE_QUOTE.test(line)) {
++    return true;
++  }
++  const m = RE_LIST.exec(line);
++  // An empty item or an ordered list not starting at 1 does not interrupt.
++  return !!m && m[4].trim() != "" && (/^[-*+]$/.test(m[2]) || /^1[.)]$/.test(m[2]));
++}
++
++function splitTableRow(line) {
++  let s = line.trim();
++  if (s.startsWith("|")) {
++    s = s.slice(1);
++  }
++  if (s.endsWith("|") && !s.endsWith("\\|")) {
++    s = s.slice(0, -1);
++  }
++  const cells = [];
++  let cell = "";
++  let inCode = false;
++  for (let i = 0; i < s.length; i++) {
++    const c = s[i];
++    if (c == "\\" && s[i + 1] == "|") {
++      cell += "|";
++      i++;
++    } else if (c == "`") {
++      inCode = !inCode;
++      cell += c;
++    } else if (c == "|" && !inCode) {
++      cells.push(cell.trim());
++      cell = "";
++    } else {
++      cell += c;
++    }
++  }
++  cells.push(cell.trim());
++  return cells;
++}
++
++class Converter {
++  constructor() {
++    this.refs = new Map();
++    // HTML held out of the text while inline markup is converted; shared so
++    // that nested conversions (link text) resolve the outer placeholders.
++    this.stash = [];
++  }
++
++  convert(source) {
++    const lines = String(source ?? "")
++      .replace(/\u0000/g, "�")
++      .replace(/\r\n?/g, "\n")
++      .split("\n")
++      .map(expandTabs);
++    this._collectRefs(lines);
++    return this.blocks(lines);
++  }
++
++  /** Link reference definitions, outside code blocks. */
++  _collectRefs(lines) {
++    let fence = null;
++    for (let i = 0; i < lines.length; i++) {
++      const line = lines[i];
++      const f = RE_FENCE.exec(line);
++      if (fence) {
++        if (f && f[2][0] == fence[0] && f[2].length >= fence.length && !f[3]) {
++          fence = null;
++        }
++        continue;
++      }
++      if (f) {
++        fence = f[2];
++        continue;
++      }
++      const m = RE_REFDEF.exec(line);
++      if (m) {
++        const label = normalizeLabel(m[1]);
++        if (!this.refs.has(label)) {
++          this.refs.set(label, { url: m[2], title: m[3] ?? m[4] ?? m[5] ?? "" });
++        }
++        lines[i] = null; // Removed from the output.
++      }
++    }
++    for (let i = lines.length - 1; i >= 0; i--) {
++      if (lines[i] === null) {
++        lines.splice(i, 1);
++      }
++    }
++  }
++
++  /** Convert a list of lines (already stripped of container markers). */
++  blocks(lines) {
++    const out = [];
++    let i = 0;
++    while (i < lines.length) {
++      const line = lines[i];
++      if (isBlank(line)) {
++        i++;
++        continue;
++      }
++
++      // Fenced code.
++      let m = RE_FENCE.exec(line);
++      if (m && !(m[2][0] == "`" && m[3].includes("`"))) {
++        const indent = m[1].length;
++        const fence = m[2];
++        const lang = m[3];
++        const code = [];
++        i++;
++        while (i < lines.length) {
++          const close = RE_FENCE.exec(lines[i]);
++          if (close && close[2][0] == fence[0] && close[2].length >= fence.length && !close[3]) {
++            i++;
++            break;
++          }
++          code.push(lines[i].replace(new RegExp(`^ {0,${indent}}`), ""));
++          i++;
++        }
++        const cls = lang ? ` class="language-${escapeHTML(lang)}"` : "";
++        out.push(`<pre><code${cls}>${escapeHTML(code.join("\n"))}${code.length ? "\n" : ""}</code></pre>`);
++        continue;
++      }
++
++      // Indented code.
++      if (indentOf(line) >= 4) {
++        const code = [];
++        while (i < lines.length && (indentOf(lines[i]) >= 4 || isBlank(lines[i]))) {
++          code.push(lines[i].slice(4));
++          i++;
++        }
++        while (code.length && isBlank(code[code.length - 1])) {
++          code.pop();
++        }
++        out.push(`<pre><code>${escapeHTML(code.join("\n"))}\n</code></pre>`);
++        continue;
++      }
++
++      // ATX heading.
++      m = RE_ATX.exec(line);
++      if (m) {
++        const level = m[1].length;
++        out.push(`<h${level}>${this.inline((m[2] ?? "").trim())}</h${level}>`);
++        i++;
++        continue;
++      }
++
++      // Thematic break (before lists: "* * *").
++      if (RE_HR.test(line)) {
++        out.push("<hr>");
++        i++;
++        continue;
++      }
++
++      // Block quote.
++      if (RE_QUOTE.test(line)) {
++        const inner = [];
++        while (i < lines.length) {
++          if (RE_QUOTE.test(lines[i])) {
++            inner.push(lines[i].replace(RE_QUOTE, ""));
++          } else if (
++            !isBlank(lines[i]) &&
++            inner.length &&
++            !isBlank(inner[inner.length - 1]) &&
++            !interruptsParagraph(lines[i])
++          ) {
++            // Lazy continuation of a quoted paragraph.
++            inner.push(lines[i]);
++          } else {
++            break;
++          }
++          i++;
++        }
++        out.push(`<blockquote>\n${this.blocks(inner)}\n</blockquote>`);
++        continue;
++      }
++
++      // List.
++      m = RE_LIST.exec(line);
++      if (m) {
++        i = this._list(lines, i, out);
++        continue;
++      }
++
++      // Table.
++      if (line.includes("|") && i + 1 < lines.length && RE_TABLE_DELIM.test(lines[i + 1])) {
++        const header = splitTableRow(line);
++        const aligns = splitTableRow(lines[i + 1]).map(d =>
++          d.startsWith(":") && d.endsWith(":")
++            ? "center"
++            : d.endsWith(":")
++              ? "right"
++              : d.startsWith(":")
++                ? "left"
++                : ""
++        );
++        if (aligns.length == header.length) {
++          i += 2;
++          const cell = (tag, text, n) => {
++            const align = aligns[n] ? ` align="${aligns[n]}"` : "";
++            return `<${tag}${align}>${this.inline(text ?? "")}</${tag}>`;
++          };
++          let html = "<table>\n<thead>\n<tr>";
++          html += header.map((h, n) => cell("th", h, n)).join("");
++          html += "</tr>\n</thead>\n";
++          const body = [];
++          while (i < lines.length && !isBlank(lines[i]) && !interruptsParagraph(lines[i])) {
++            const cells = splitTableRow(lines[i]);
++            body.push("<tr>" + header.map((h, n) => cell("td", cells[n], n)).join("") + "</tr>");
++            i++;
++          }
++          if (body.length) {
++            html += `<tbody>\n${body.join("\n")}\n</tbody>\n`;
++          }
++          out.push(html + "</table>");
++          continue;
++        }
++      }
++
++      // Paragraph, possibly a setext heading.
++      const para = [line];
++      i++;
++      let heading = 0;
++      while (i < lines.length && !isBlank(lines[i])) {
++        const sm = RE_SETEXT.exec(lines[i]);
++        if (sm) {
++          heading = sm[1][0] == "=" ? 1 : 2;
++          i++;
++          break;
++        }
++        if (interruptsParagraph(lines[i])) {
++          break;
++        }
++        para.push(lines[i]);
++        i++;
++      }
++      const text = this.inline(para.map(l => l.replace(/^ +/, "")).join("\n").replace(/\s+$/, ""));
++      out.push(heading ? `<h${heading}>${text}</h${heading}>` : `<p>${text}</p>`);
++    }
++    return out.join("\n");
++  }
++
++  /** Parse a list starting at lines[start]; returns the next line index. */
++  _list(lines, start, out) {
++    const first = RE_LIST.exec(lines[start]);
++    const ordered = /\d/.test(first[2]);
++    const delimiter = first[2].slice(-1);
++    const items = [];
++    let loose = false;
++    let i = start;
++    while (i < lines.length) {
++      const m = RE_LIST.exec(lines[i]);
++      if (
++        !m ||
++        /\d/.test(m[2]) != ordered ||
++        m[2].slice(-1) != delimiter ||
++        RE_HR.test(lines[i])
++      ) {
++        break;
++      }
++      // Content starts after the marker and at most 4 spaces.
++      const spaces = m[3].length > 4 || m[4] == "" ? 1 : m[3].length;
++      const contentIndent = m[1].length + m[2].length + spaces;
++      const itemLines = [m[4] == "" ? "" : " ".repeat(Math.max(0, m[3].length - spaces)) + m[4]];
++      i++;
++      let sawBlank = false;
++      while (i < lines.length) {
++        const l = lines[i];
++        if (isBlank(l)) {
++          itemLines.push("");
++          sawBlank = true;
++          i++;
++          continue;
++        }
++        if (indentOf(l) >= contentIndent) {
++          if (sawBlank) {
++            loose = true;
++          }
++          itemLines.push(l.slice(contentIndent));
++          sawBlank = false;
++          i++;
++          continue;
++        }
++        if (!sawBlank && !interruptsParagraph(l) && !RE_LIST.test(l)) {
++          // Lazy continuation line.
++          itemLines.push(l);
++          i++;
++          continue;
++        }
++        break;
++      }
++      // Trailing blank lines belong between items.
++      let trailing = 0;
++      while (itemLines.length > 1 && isBlank(itemLines[itemLines.length - 1])) {
++        itemLines.pop();
++        trailing++;
++      }
++      const next = i < lines.length ? RE_LIST.exec(lines[i]) : null;
++      if (trailing && next && /\d/.test(next[2]) == ordered && next[2].slice(-1) == delimiter) {
++        loose = true;
++      }
++      items.push({ number: ordered ? parseInt(m[2], 10) : 0, lines: itemLines });
++      if (trailing && !next) {
++        break;
++      }
++    }
++
++    const tag = ordered ? "ol" : "ul";
++    const startAttr = ordered && items[0].number != 1 ? ` start="${items[0].number}"` : "";
++    let isTaskList = false;
++    const html = items.map(item => {
++      let task = "";
++      const tm = /^\[([ xX])\][ \t]+/.exec(item.lines[0]);
++      if (tm) {
++        isTaskList = true;
++        item.lines[0] = item.lines[0].slice(tm[0].length);
++        task = `<input type="checkbox" disabled=""${tm[1] == " " ? "" : ' checked=""'}> `;
++      }
++      let body = this.blocks(item.lines);
++      if (!loose) {
++        // Tight list: no paragraphs.
++        body = body.replace(/<p>([\s\S]*?)<\/p>/g, "$1");
++      }
++      return `<li${task ? ' class="task-list-item"' : ""}>${task}${body}</li>`;
++    });
++    const cls = isTaskList ? ' class="contains-task-list"' : "";
++    out.push(`<${tag}${startAttr}${cls}>\n${html.join("\n")}\n</${tag}>`);
++    return i;
++  }
++
++  _link(url, title, html) {
++    const safe = safeLinkURL(url);
++    if (!safe) {
++      return html;
++    }
++    const t = title ? ` title="${escapeHTML(title)}"` : "";
++    return `<a href="${escapeHTML(safe)}"${t}>${html}</a>`;
++  }
++
++  _image(url, title, alt) {
++    const t = title ? ` title="${escapeHTML(title)}"` : "";
++    const src = safeImageURL(url);
++    if (src) {
++      return `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"${t}>`;
++    }
++    // Not loaded: a link to the image instead.
++    return this._link(url, title, `<span class="image-link">${escapeHTML(alt || url)}</span>`);
++  }
++
++  /** Convert inline Markdown in one block of text. */
++  inline(text) {
++    const stash = this.stash;
++    const hold = html => `\u0000${stash.push(html) - 1}\u0000`;
++
++    // Code spans.
++    text = text.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (all, ticks, code) => {
++      code = code.replace(/\n/g, " ");
++      if (/^ .*[^ ].* $/.test(code)) {
++        code = code.slice(1, -1);
++      }
++      return hold(`<code>${escapeHTML(code)}</code>`);
++    });
++    // Backslash escapes, and hard breaks made with a backslash.
++    text = text.replace(/\\\n/g, () => hold("<br>\n"));
++    text = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, (all, c) =>
++      hold(escapeHTML(c))
++    );
++    // Autolinks.
++    text = text.replace(/<([a-z][a-z0-9+.-]{1,31}:[^\s<>]*)>/gi, (all, url) =>
++      hold(this._link(url, "", escapeHTML(url)))
++    );
++    text = text.replace(
++      /<([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)>/gi,
++      (all, email) => hold(this._link("mailto:" + email, "", escapeHTML(email)))
++    );
++
++    const label = "((?:[^\\[\\]\\u0000]|\\u0000\\d+\\u0000|\\[[^\\[\\]]*\\])*)";
++    const dest = "\\(\\s*(?:<([^<>\\n]*)>|([^\\s()]*(?:\\([^\\s()]*\\)[^\\s()]*)*))" +
++      "(?:\\s+(?:\"([^\"]*)\"|'([^']*)'|\\(([^)]*)\\)))?\\s*\\)";
++    // Images, then links, inline and by reference.
++    text = text.replace(new RegExp(`!\\[${label}\\]${dest}`, "g"), (all, alt, u1, u2, t1, t2, t3) =>
++      hold(this._image(u1 ?? u2, t1 ?? t2 ?? t3, this._plain(alt, stash)))
++    );
++    text = text.replace(
++      new RegExp(`!\\[${label}\\](?:\\[([^\\]]*)\\])?`, "g"),
++      (all, alt, ref) => {
++        const def = this.refs.get(normalizeLabel(ref || alt));
++        return def ? hold(this._image(def.url, def.title, this._plain(alt, stash))) : all;
++      }
++    );
++    text = text.replace(new RegExp(`\\[${label}\\]${dest}`, "g"), (all, inner, u1, u2, t1, t2, t3) =>
++      hold(this._link(u1 ?? u2, t1 ?? t2 ?? t3, this._inlineText(inner)))
++    );
++    text = text.replace(new RegExp(`\\[${label}\\](?:\\[([^\\]]*)\\])?`, "g"), (all, inner, ref) => {
++      const def = this.refs.get(normalizeLabel(ref || inner));
++      return def ? hold(this._link(def.url, def.title, this._inlineText(inner))) : all;
++    });
++    // Bare URLs (GFM autolink extension).
++    text = text.replace(/(^|[\s(*_~])((?:https?:\/\/|www\.)[^\s<]*[^\s<?!.,:*_~)'"])/gi, (all, pre, url) =>
++      pre + hold(this._link(url.startsWith("www.") ? "http://" + url : url, "", escapeHTML(url)))
++    );
++
++    text = escapeHTML(text);
++
++    // Emphasis, strong and strikethrough.
++    for (let n = 0; n < 3; n++) {
++      text = text
++        .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, "<strong>$1</strong>")
++        .replace(/(^|[^\w\\])__(?=\S)([\s\S]*?\S)__(?!\w)/g, "$1<strong>$2</strong>")
++        .replace(/\*(?=[^\s*])([\s\S]*?[^\s*])\*/g, "<em>$1</em>")
++        .replace(/(^|[^\w\\])_(?=[^\s_])([\s\S]*?[^\s_])_(?!\w)/g, "$1<em>$2</em>")
++        .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>");
++    }
++    // Hard line breaks (two spaces at the end of a line).
++    text = text.replace(/ {2,}\n/g, "<br>\n");
++
++    // Put the held pieces back; they can nest.
++    for (let n = 0; n < 5 && text.includes("\u0000"); n++) {
++      text = text.replace(/\u0000(\d+)\u0000/g, (all, k) => stash[k]);
++    }
++    return text.replace(/\u0000/g, "");
++  }
++
++  /** Inline HTML for link text, with no nested links. */
++  _inlineText(text) {
++    return this.inline(text).replace(/<a [^>]*>|<\/a>/g, "");
++  }
++
++  /** Plain text of an image description. */
++  _plain(text, stash) {
++    return text
++      .replace(/\u0000(\d+)\u0000/g, (all, k) => stash[k].replace(/<[^>]*>/g, ""))
++      .replace(/&lt;/g, "<")
++      .replace(/&gt;/g, ">")
++      .replace(/&quot;/g, '"')
++      .replace(/&#39;/g, "'")
++      .replace(/&amp;/g, "&")
++      .replace(/[*_~`]/g, "");
++  }
++}
++
++/**
++ * Convert Markdown source to an HTML fragment.
++ *
++ * @param {string} source
++ * @returns {string}
++ */
++export function markdownToHTML(source) {
++  return new Converter().convert(source);
++}
++
++/** Elements and attributes markdownToHTML can produce. */
++export const ALLOWED_ELEMENTS = {
++  a: ["href", "title"],
++  blockquote: [],
++  br: [],
++  code: ["class"],
++  del: [],
++  em: [],
++  h1: [],
++  h2: [],
++  h3: [],
++  h4: [],
++  h5: [],
++  h6: [],
++  hr: [],
++  img: ["src", "alt", "title"],
++  input: ["type", "checked", "disabled"],
++  li: ["class"],
++  ol: ["start", "class"],
++  p: [],
++  pre: [],
++  span: ["class"],
++  strong: [],
++  table: [],
++  tbody: [],
++  td: ["align"],
++  th: ["align"],
++  thead: [],
++  tr: [],
++  ul: ["class"],
++};
 diff --git a/mail/components/jmapfiles/modules/JmapFilesUI.sys.mjs b/mail/components/jmapfiles/modules/JmapFilesUI.sys.mjs
 new file mode 100644
 index 00000000000..fb9fed28525
@@ -11236,10 +12052,10 @@ index 00000000000..fb9fed28525
 +};
 diff --git a/mail/components/jmapfiles/moz.build b/mail/components/jmapfiles/moz.build
 new file mode 100644
-index 00000000000..03761fbdc6e
+index 00000000000..8ec741753f9
 --- /dev/null
 +++ b/mail/components/jmapfiles/moz.build
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,18 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -11250,6 +12066,7 @@ index 00000000000..03761fbdc6e
 +EXTRA_JS_MODULES.jmapfiles += [
 +    "modules/JmapCloudFile.sys.mjs",
 +    "modules/JmapFiles.sys.mjs",
++    "modules/JmapFilesMarkdown.sys.mjs",
 +    "modules/JmapFilesUI.sys.mjs",
 +]
 +
@@ -11280,10 +12097,10 @@ index 00000000000..a3a4a6e8b7b
 +["browser_jmapFilesTab.js"]
 diff --git a/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js b/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js
 new file mode 100644
-index 00000000000..f3215d107cc
+index 00000000000..b0aef73a579
 --- /dev/null
 +++ b/mail/components/jmapfiles/test/browser/browser_jmapFilesTab.js
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,416 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11313,6 +12130,10 @@ index 00000000000..f3215d107cc
 +  c => c.charCodeAt(0)
 +);
 +const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="blue"/><script>window.top.svgRan = true;</script></svg>`;
++const MARKDOWN =
++  "# Read me\n\nSome **bold** and <b>raw</b> text.\n\n" +
++  "- [x] done\n- [link](https://example.com/) and [bad](javascript:alert(1))\n\n" +
++  "![remote](https://example.com/x.png)\n\n| a | b |\n|---|---|\n| 1 | 2 |\n";
 +const HTML = `<!DOCTYPE html><title>page</title><p id="para">Hello page</p><script>document.title = "script ran";</script>`;
 +
 +let client, service, ids, win;
@@ -11397,6 +12218,7 @@ index 00000000000..f3215d107cc
 +  ids.notes = await addFile("notes.txt", "Line one\nLine two\n", "text/plain");
 +  ids.json = await addFile("data.json", '{"a":1,"b":[true,null]}', "application/json");
 +  ids.csv = await addFile("table.csv", "name,count\napples,3\n\"pears, ripe\",5\n", "text/csv");
++  ids.md = await addFile("readme.md", MARKDOWN, "application/octet-stream");
 +  ids.png = await addFile("red.png", PNG, "image/png");
 +  ids.svg = await addFile("blue.svg", SVG, "application/octet-stream");
 +  ids.html = await addFile("page.html", HTML, "text/html");
@@ -11416,7 +12238,7 @@ index 00000000000..f3215d107cc
 +    "Files tab loaded"
 +  );
 +  win = tab.browser.contentWindow;
-+  await TestUtils.waitForCondition(() => rowNames().length == 10, "rows rendered");
++  await TestUtils.waitForCondition(() => rowNames().length == 11, "rows rendered");
 +
 +  registerCleanupFunction(() => {
 +    tabmail.closeOtherTabs(tabmail.tabInfo[0]);
@@ -11432,7 +12254,7 @@ index 00000000000..f3215d107cc
 +  Assert.deepEqual(rowNames().slice(0, 2), ["Documents", "Photos"], "folders come first");
 +  Assert.deepEqual(
 +    rowNames().slice(2),
-+    ["archive.zip", "blue.svg", "data.json", "document.pdf", "notes.txt", "page.html", "red.png", "table.csv"],
++    ["archive.zip", "blue.svg", "data.json", "document.pdf", "notes.txt", "page.html", "readme.md", "red.png", "table.csv"],
 +    "files sorted by name"
 +  );
 +  const nameHeader = doc.querySelector("th[data-sort=name]");
@@ -11451,7 +12273,7 @@ index 00000000000..f3215d107cc
 +  Assert.equal(rowNames()[2], "archive.zip");
 +  // The summary is translated asynchronously.
 +  await TestUtils.waitForCondition(
-+    () => doc.getElementById("folderSummary").textContent.includes("8 files"),
++    () => doc.getElementById("folderSummary").textContent.includes("9 files"),
 +    "summary translated"
 +  );
 +  Assert.ok(doc.getElementById("accountPicker").hidden, "no picker for one account");
@@ -11491,6 +12313,29 @@ index 00000000000..f3215d107cc
 +    "quoted fields are parsed"
 +  );
 +  await screenshot("csv");
++
++  await select("readme.md");
++  await waitForPreview("markdown", () => previewContent().querySelector(".preview-markdown"));
++  const md = previewContent().querySelector(".preview-markdown");
++  Assert.equal(md.querySelector("h1").textContent, "Read me");
++  Assert.equal(md.querySelector("strong").textContent, "bold");
++  Assert.ok(!md.querySelector("b"), "raw HTML is not rendered");
++  Assert.ok(md.textContent.includes("<b>raw</b>"), "raw HTML is shown as text");
++  Assert.ok(md.querySelector("input[type=checkbox]").checked, "task item");
++  const links = md.querySelectorAll(".preview-markdown-link");
++  Assert.deepEqual(
++    [...links].map(a => a.dataset.href),
++    ["https://example.com/", "https://example.com/x.png"],
++    "only safe links; the remote image is a link"
++  );
++  Assert.ok(![...md.querySelectorAll("a")].some(a => a.hasAttribute("href")), "no href");
++  Assert.ok(!md.querySelector("img"), "remote images are not loaded");
++  Assert.equal(md.querySelectorAll("td").length, 2, "table");
++  Assert.equal(win.previewKind({ name: "x.md" }).kind, "markdown");
++  Assert.equal(win.previewKind({ name: "x", mediaType: "text/markdown" }).kind, "markdown");
++  Assert.equal(win.previewKind({ name: "x.markdown", mediaType: "text/plain" }).kind, "markdown");
++  Assert.equal(win.previewKind({ name: "x.txt" }).kind, "text");
++  await screenshot("markdown");
 +});
 +
 +add_task(async function test_image_previews() {
@@ -12193,16 +13038,115 @@ index 00000000000..36b05e2c7e9
 +  Assert.ok(!link.requiresLogin);
 +  Assert.equal(link.url, `https://files.example/s/a1/${g.id}`);
 +});
+diff --git a/mail/components/jmapfiles/test/unit/test_jmapFilesMarkdown.js b/mail/components/jmapfiles/test/unit/test_jmapFilesMarkdown.js
+new file mode 100644
+index 00000000000..1aa1541dad2
+--- /dev/null
++++ b/mail/components/jmapfiles/test/unit/test_jmapFilesMarkdown.js
+@@ -0,0 +1,91 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * The Markdown converter of the Files preview.
++ */
++
++const { markdownToHTML, safeLinkURL, safeImageURL } = ChromeUtils.importESModule(
++  "resource:///modules/jmapfiles/JmapFilesMarkdown.sys.mjs"
++);
++
++add_task(function test_blocks() {
++  Assert.equal(markdownToHTML("# One\n## Two ##"), "<h1>One</h1>\n<h2>Two</h2>");
++  Assert.equal(markdownToHTML("Title\n===\nSub\n---"), "<h1>Title</h1>\n<h2>Sub</h2>");
++  Assert.equal(markdownToHTML("a\nb\n\nc"), "<p>a\nb</p>\n<p>c</p>");
++  Assert.equal(markdownToHTML("---"), "<hr>");
++  Assert.equal(markdownToHTML("> quote\nlazy"), "<blockquote>\n<p>quote\nlazy</p>\n</blockquote>");
++  Assert.equal(
++    markdownToHTML("```js\n<i>x</i>\n```"),
++    '<pre><code class="language-js">&lt;i&gt;x&lt;/i&gt;\n</code></pre>'
++  );
++  Assert.equal(markdownToHTML("    code\n"), "<pre><code>code\n</code></pre>");
++});
++
++add_task(function test_lists() {
++  Assert.equal(markdownToHTML("- a\n- b"), "<ul>\n<li>a</li>\n<li>b</li>\n</ul>");
++  Assert.equal(
++    markdownToHTML("3. a\n4. b"),
++    '<ol start="3">\n<li>a</li>\n<li>b</li>\n</ol>'
++  );
++  Assert.equal(
++    markdownToHTML("- a\n  - b\n- c"),
++    "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul></li>\n<li>c</li>\n</ul>"
++  );
++  Assert.equal(markdownToHTML("1. a\n\n2. b"), "<ol>\n<li><p>a</p></li>\n<li><p>b</p></li>\n</ol>");
++  const tasks = markdownToHTML("- [ ] todo\n- [x] done");
++  Assert.ok(tasks.includes('<input type="checkbox" disabled=""> todo'), tasks);
++  Assert.ok(tasks.includes('<input type="checkbox" disabled="" checked=""> done'), tasks);
++});
++
++add_task(function test_inline() {
++  Assert.equal(
++    markdownToHTML("**b** *i* _i_ ~~s~~ `c<d>`"),
++    "<p><strong>b</strong> <em>i</em> <em>i</em> <del>s</del> <code>c&lt;d&gt;</code></p>"
++  );
++  Assert.equal(markdownToHTML("snake_case_name"), "<p>snake_case_name</p>");
++  Assert.equal(markdownToHTML("\\*not\\*"), "<p>*not*</p>");
++  Assert.equal(markdownToHTML("a  \nb"), "<p>a<br>\nb</p>");
++  Assert.equal(
++    markdownToHTML('[x](https://e.com/ "T")'),
++    '<p><a href="https://e.com/" title="T">x</a></p>'
++  );
++  Assert.equal(
++    markdownToHTML("[x][r]\n\n[r]: https://ref.example"),
++    '<p><a href="https://ref.example">x</a></p>'
++  );
++  Assert.equal(
++    markdownToHTML("<https://a.example>"),
++    '<p><a href="https://a.example">https://a.example</a></p>'
++  );
++});
++
++add_task(function test_tables() {
++  const html = markdownToHTML("| a | b |\n|:--|--:|\n| 1 | 2 \\| 3 |");
++  Assert.ok(html.includes('<th align="left">a</th><th align="right">b</th>'), html);
++  Assert.ok(html.includes('<td align="left">1</td><td align="right">2 | 3</td>'), html);
++});
++
++add_task(function test_safety() {
++  Assert.equal(
++    markdownToHTML("<script>alert(1)</script><img src=x onerror=y>"),
++    "<p>&lt;script&gt;alert(1)&lt;/script&gt;&lt;img src=x onerror=y&gt;</p>"
++  );
++  Assert.equal(markdownToHTML("[x](javascript:alert(1))"), "<p>x</p>");
++  Assert.equal(markdownToHTML("[x](JavaScript:alert(1))"), "<p>x</p>");
++  Assert.equal(markdownToHTML("[x](data:text/html,hi)"), "<p>x</p>");
++  Assert.equal(markdownToHTML('[x](https://e.com/"onclick="y)'), '<p><a href="https://e.com/&quot;onclick=&quot;y">x</a></p>');
++  // Remote images become links; data: images are shown.
++  Assert.equal(
++    markdownToHTML("![pic](https://e.com/p.png)"),
++    '<p><a href="https://e.com/p.png"><span class="image-link">pic</span></a></p>'
++  );
++  Assert.equal(
++    markdownToHTML("![pic](data:image/png;base64,AAAA)"),
++    '<p><img src="data:image/png;base64,AAAA" alt="pic"></p>'
++  );
++  Assert.equal(safeLinkURL("java\tscript:x"), null);
++  Assert.equal(safeLinkURL("mailto:a@b.example"), "mailto:a@b.example");
++  Assert.equal(safeImageURL("data:text/html;base64,AAAA"), null);
++});
 diff --git a/mail/components/jmapfiles/test/unit/xpcshell.toml b/mail/components/jmapfiles/test/unit/xpcshell.toml
 new file mode 100644
-index 00000000000..c267be41955
+index 00000000000..c28fd8f87a4
 --- /dev/null
 +++ b/mail/components/jmapfiles/test/unit/xpcshell.toml
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,6 @@
 +[DEFAULT]
 +head = "head.js"
 +
 +["test_jmapFiles.js"]
++
++["test_jmapFilesMarkdown.js"]
 diff --git a/mail/components/moz.build b/mail/components/moz.build
 index 566bbee8db5..f96601fd3db 100644
 --- a/mail/components/moz.build
@@ -15128,6 +16072,24 @@ index f9e2361ed34..f3968c1dfff 100644
      this.sendReport.currentProcess = Ci.nsIMsgSendReport.process_Copy;
      return this._mimeDoFcc(this._fcc, Ci.nsIMsgSend.nsMsgDeliverNow);
    }
+diff --git a/mailnews/db/gloda/modules/Gloda.sys.mjs b/mailnews/db/gloda/modules/Gloda.sys.mjs
+index 63fd6c0f63e..d34cd59caac 100644
+--- a/mailnews/db/gloda/modules/Gloda.sys.mjs
++++ b/mailnews/db/gloda/modules/Gloda.sys.mjs
+@@ -1000,10 +1000,11 @@ export var Gloda = {
+                 ) {
+                   continue;
+                 }
+-                // we only index local or IMAP folders
++                // we only index local, IMAP and JMAP folders
+                 if (
+                   !(folder instanceof Ci.nsIMsgLocalMailFolder) &&
+-                  !(folder instanceof Ci.nsIMsgImapMailFolder)
++                  !(folder instanceof Ci.nsIMsgImapMailFolder) &&
++                  folder.server.type != "jmap"
+                 ) {
+                   continue;
+                 }
 diff --git a/mailnews/jar.mn b/mailnews/jar.mn
 index 6f043514142..2aa255a5816 100644
 --- a/mailnews/jar.mn
@@ -17312,10 +18274,10 @@ index 00000000000..217419298a2
 +}
 diff --git a/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs b/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs
 new file mode 100644
-index 00000000000..28613c83222
+index 00000000000..f1d96abaf3b
 --- /dev/null
 +++ b/mailnews/protocols/jmap/modules/JmapFolderStore.sys.mjs
-@@ -0,0 +1,409 @@
+@@ -0,0 +1,522 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17345,6 +18307,34 @@ index 00000000000..28613c83222
 +const MAILBOX_ID_PROPERTY = "jmapId";
 +
 +/**
++ * Header property Gloda stores its message id in; 0 means not indexed.
++ */
++const GLODA_ID_PROPERTY = "gloda-id";
++
++/**
++ * Batch size for `msgsClassified` notifications.
++ */
++const CLASSIFIED_BATCH_SIZE = 500;
++
++/**
++ * URIs of folders whose unindexed headers were already handed to Gloda in
++ * this session (see #collectUnindexed).
++ */
++const glodaBackfilledFolders = new Set();
++
++/**
++ * Whether the global search indexer is enabled.
++ *
++ * @returns {boolean}
++ */
++function glodaEnabled() {
++  return Services.prefs.getBoolPref(
++    "mailnews.database.global.indexer.enabled",
++    false
++  );
++}
++
++/**
 + * `JmapSyncStore` implementation backed by Thunderbird folders and message
 + * databases.
 + *
@@ -17361,6 +18351,8 @@ index 00000000000..28613c83222
 +  #headers = new Map();
 +  #touched = new Set();
 +  #newKeys = new Map();
++  /** @type {Map<nsIMsgFolder, nsIMsgDBHdr[]>} */
++  #classify = new Map();
 +
 +  /**
 +   * @param {object} options
@@ -17453,6 +18445,12 @@ index 00000000000..28613c83222
 +        this.#newKeys.set(folder, []);
 +      }
 +      this.#newKeys.get(folder).push(live.messageKey);
++    } else {
++      // New Inbox mail reaches Gloda through the junk classifier
++      // (msgsClassified). Everything else, like the initial download and
++      // mail in other folders, is announced in flush() so the global search
++      // indexes it.
++      this.#queueClassified(folder, live);
 +    }
 +    MailServices.mfn.notifyMsgAdded(live);
 +  }
@@ -17501,6 +18499,13 @@ index 00000000000..28613c83222
 +
 +    this.#touched.add(folder);
 +    this.#unindexHeader(folder, header);
++    const queued = this.#classify.get(folder);
++    if (queued) {
++      this.#classify.set(
++        folder,
++        queued.filter(h => h != header)
++      );
++    }
 +    MailServices.mfn.notifyMsgsDeleted([header]);
 +  }
 +
@@ -17542,6 +18547,25 @@ index 00000000000..28613c83222
 +    }
 +    this.#touched.clear();
 +
++    // Gloda indexes messages it hears about through msgsClassified.
++    const classify = this.#classify;
++    this.#classify = new Map();
++    for (const headers of classify.values()) {
++      for (let i = 0; i < headers.length; i += CLASSIFIED_BATCH_SIZE) {
++        try {
++          MailServices.mfn.notifyMsgsClassified(
++            headers.slice(i, i + CLASSIFIED_BATCH_SIZE),
++            false,
++            false
++          );
++        } catch (error) {
++          this.#logger?.warn?.(
++            `JMAP sync: could not announce messages for indexing: ${error}`
++          );
++        }
++      }
++    }
++
 +    // Hand new Inbox messages to the folder, which runs incoming filters
 +    // and junk classification on them.
 +    const newKeys = this.#newKeys;
@@ -17565,6 +18589,49 @@ index 00000000000..28613c83222
 +   */
 +  get pendingNewKeys() {
 +    return this.#newKeys;
++  }
++
++  /**
++   * Headers queued for a msgsClassified notification, per folder. For tests.
++   *
++   * @returns {Map<nsIMsgFolder, nsIMsgDBHdr[]>}
++   */
++  get pendingClassified() {
++    return this.#classify;
++  }
++
++  /**
++   * @param {nsIMsgFolder} folder
++   * @param {nsIMsgDBHdr} header
++   */
++  #queueClassified(folder, header) {
++    if (!glodaEnabled()) {
++      return;
++    }
++    if (!this.#classify.has(folder)) {
++      this.#classify.set(folder, []);
++    }
++    this.#classify.get(folder).push(header);
++  }
++
++  /**
++   * Whether existing headers of `folder` should be offered to Gloda: once per
++   * session, for folders Gloda indexes by default. Headers synced before
++   * JMAP folders announced their messages were never seen by Gloda; this
++   * catches them up.
++   *
++   * @param {nsIMsgFolder} folder
++   * @returns {boolean}
++   */
++  #wantsBackfill(folder) {
++    if (!glodaEnabled() || glodaBackfilledFolders.has(folder.URI)) {
++      return false;
++    }
++    glodaBackfilledFolders.add(folder.URI);
++    return !folder.isSpecialFolder(
++      Ci.nsMsgFolderFlags.Trash | Ci.nsMsgFolderFlags.Junk,
++      true
++    );
 +  }
 +
 +  /**
@@ -17602,11 +18669,19 @@ index 00000000000..28613c83222
 +        continue;
 +      }
 +
++      const backfill = this.#wantsBackfill(folder);
 +      try {
 +        for (const header of db.enumerateMessages()) {
 +          const emailId = header.getStringProperty(JMAP_ID_PROPERTY);
 +          if (emailId) {
 +            this.#indexHeader(folder, header, emailId);
++          }
++          if (
++            backfill &&
++            !header.getUint32Property(GLODA_ID_PROPERTY) &&
++            header.getStringProperty("junkscore") != "100"
++          ) {
++            this.#queueClassified(folder, header);
 +          }
 +        }
 +      } catch (error) {
@@ -25849,10 +26924,10 @@ index 00000000000..f4c1ec3c632
 +#endif  // COMM_MAILNEWS_PROTOCOLS_JMAP_SRC_JMAPCOPYMOVETRANSACTION_H_
 diff --git a/mailnews/protocols/jmap/src/JmapFetchMsgsToOffline.cpp b/mailnews/protocols/jmap/src/JmapFetchMsgsToOffline.cpp
 new file mode 100644
-index 00000000000..98d5d00d015
+index 00000000000..940bf194914
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapFetchMsgsToOffline.cpp
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,214 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25869,7 +26944,9 @@ index 00000000000..98d5d00d015
 +#include "nsDebug.h"
 +#include "nsError.h"
 +#include "nsIInputStream.h"
++#include "mozilla/Components.h"
 +#include "nsIMsgFolder.h"
++#include "nsIMsgFolderNotificationService.h"
 +#include "nsIMsgHdr.h"
 +#include "nsIMsgIncomingServer.h"
 +#include "nsIMsgPluggableStore.h"
@@ -25970,6 +27047,21 @@ index 00000000000..98d5d00d015
 +      if (NS_SUCCEEDED(rv)) {
 +        uint32_t unused;
 +        rv = msgHdr->OrFlags(nsMsgMessageFlags::Offline, &unused);
++      }
++      if (NS_SUCCEEDED(rv)) {
++        // Gloda indexes the body of messages it is told about once they are
++        // available offline (IMAP gets the same effect by classifying after
++        // the offline download). Tell it outside this listener callback.
++        NS_DispatchToCurrentThread(NS_NewRunnableFunction(
++            "JmapFetchMsgsToOffline::NotifyGloda", [msgHdr] {
++              nsCOMPtr<nsIMsgFolderNotificationService> notifier =
++                  mozilla::components::FolderNotification::Service();
++              if (notifier) {
++                nsTArray<RefPtr<nsIMsgDBHdr>> hdrs;
++                hdrs.AppendElement(msgHdr);
++                notifier->NotifyMsgsClassified(hdrs, false, false);
++              }
++            }));
 +      }
 +
 +      status = rv;
@@ -29955,10 +31047,10 @@ index 00000000000..373d5438b63
 +#endif  // COMM_MAILNEWS_PROTOCOLS_JMAP_SRC_JMAPPROTOCOLINFO_H_
 diff --git a/mailnews/protocols/jmap/src/JmapSearch.cpp b/mailnews/protocols/jmap/src/JmapSearch.cpp
 new file mode 100644
-index 00000000000..0031ca9a16e
+index 00000000000..17e20014c55
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapSearch.cpp
-@@ -0,0 +1,415 @@
+@@ -0,0 +1,482 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30281,34 +31373,103 @@ index 00000000000..0031ca9a16e
 +
 +}  // namespace
 +
++namespace {
++
++/**
++ * One parenthesised level of the search expression. Terms are joined left to
++ * right like nsMsgSearchBoolExpression does; consecutive terms joined by the
++ * same operator are flattened into one FilterOperator to keep the filter
++ * shallow.
++ */
++struct JmapFilterGroup {
++  nsTArray<nsCString> conditions;
++  const char* op = nullptr;
++  // How this group joins the expression before it (for nested groups).
++  bool joinAnd = true;
++
++  void Add(const nsACString& condition, bool booleanAnd) {
++    const char* op = booleanAnd ? "AND" : "OR";
++    if (conditions.IsEmpty()) {
++      conditions.AppendElement(condition);
++      return;
++    }
++    if (this->op && strcmp(this->op, op) != 0) {
++      nsAutoCString collapsed;
++      Render(collapsed);
++      conditions.Clear();
++      conditions.AppendElement(collapsed);
++    }
++    this->op = op;
++    conditions.AppendElement(condition);
++  }
++
++  void Render(nsACString& out) const {
++    if (conditions.IsEmpty()) {
++      out.AssignLiteral("{}");
++    } else if (conditions.Length() == 1) {
++      out.Assign(conditions[0]);
++    } else {
++      JmapFilterOperator(op, conditions, out);
++    }
++  }
++};
++
++}  // namespace
++
 +nsresult JmapBuildSearchFilter(const nsTArray<RefPtr<nsIMsgSearchTerm>>& terms,
 +                               const nsACString& mailboxId,
 +                               nsACString& filterJSON) {
-+  nsAutoCString combined;
-+  bool first = true;
++  nsTArray<JmapFilterGroup> stack;
++  stack.AppendElement();
++
 +  for (nsIMsgSearchTerm* term : terms) {
-+    nsAutoCString condition;
-+    nsresult rv = JmapTranslateSearchTerm(term, condition);
-+    NS_ENSURE_SUCCESS(rv, rv);
-+
-+    if (first) {
-+      combined.Assign(condition);
-+      first = false;
-+      continue;
-+    }
-+
 +    bool booleanAnd = true;
 +    term->GetBooleanAnd(&booleanAnd);
-+    nsTArray<nsCString> parts;
-+    parts.AppendElement(combined);
-+    parts.AppendElement(condition);
-+    JmapFilterOperator(booleanAnd ? "AND" : "OR", parts, combined);
++    bool beginsGrouping = false;
++    term->GetBeginsGrouping(&beginsGrouping);
++    bool endsGrouping = false;
++    term->GetEndsGrouping(&endsGrouping);
++    bool matchAll = false;
++    term->GetMatchAll(&matchAll);
++
++    nsAutoCString condition;
++    if (matchAll) {
++      // An empty FilterCondition matches every email.
++      condition.AssignLiteral("{}");
++    } else {
++      nsresult rv = JmapTranslateSearchTerm(term, condition);
++      NS_ENSURE_SUCCESS(rv, rv);
++    }
++
++    if (beginsGrouping) {
++      JmapFilterGroup* group = stack.AppendElement();
++      group->joinAnd = booleanAnd;
++    }
++    stack.LastElement().Add(condition, booleanAnd);
++
++    if (endsGrouping && stack.Length() > 1) {
++      JmapFilterGroup group = stack.PopLastElement();
++      nsAutoCString rendered;
++      group.Render(rendered);
++      stack.LastElement().Add(rendered, group.joinAnd);
++    }
 +  }
++  // Close groups the terms left open.
++  while (stack.Length() > 1) {
++    JmapFilterGroup group = stack.PopLastElement();
++    nsAutoCString rendered;
++    group.Render(rendered);
++    stack.LastElement().Add(rendered, group.joinAnd);
++  }
++
++  bool noTerms = stack[0].conditions.IsEmpty();
++  nsAutoCString combined;
++  stack[0].Render(combined);
 +
 +  if (!mailboxId.IsEmpty()) {
 +    nsAutoCString inMailbox;
 +    JmapFilterStringCondition("inMailbox", mailboxId, inMailbox);
-+    if (first) {
++    if (noTerms) {
 +      combined.Assign(inMailbox);
 +    } else {
 +      nsTArray<nsCString> parts;
@@ -30316,8 +31477,6 @@ index 00000000000..0031ca9a16e
 +      parts.AppendElement(combined);
 +      JmapFilterOperator("AND", parts, combined);
 +    }
-+  } else if (first) {
-+    combined.AssignLiteral("{}");
 +  }
 +
 +  filterJSON.Assign(combined);
@@ -30376,7 +31535,7 @@ index 00000000000..0031ca9a16e
 +}
 diff --git a/mailnews/protocols/jmap/src/JmapSearch.h b/mailnews/protocols/jmap/src/JmapSearch.h
 new file mode 100644
-index 00000000000..6124151ab27
+index 00000000000..b694b7bbdd5
 --- /dev/null
 +++ b/mailnews/protocols/jmap/src/JmapSearch.h
 @@ -0,0 +1,40 @@
@@ -30400,7 +31559,7 @@ index 00000000000..6124151ab27
 + * Supported attributes: subject, sender, recipients (to, cc, to-or-cc, all
 + * addresses), body, any text, date, message status (read, flagged, replied,
 + * forwarded), tags (keywords) and size. Terms are combined left to right
-+ * using each term's `booleanAnd`; explicit grouping is not preserved.
++ * using each term's `booleanAnd`, honouring `beginsGrouping`/`endsGrouping`.
 + *
 + * @param terms - The search terms.
 + * @param mailboxId - If not empty, restrict the query to this mailbox.
@@ -32625,6 +33784,112 @@ index 00000000000..f4c0f1e43f5
 +  const { list } = await jmapCall(server, "Mailbox/get", { ids: null });
 +  Assert.ok(list.length > 0, "Mailbox/get works after password sign-in");
 +});
+diff --git a/mailnews/protocols/jmap/test/live/test_live_search.js b/mailnews/protocols/jmap/test/live/test_live_search.js
+new file mode 100644
+index 00000000000..1430e322832
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/live/test_live_search.js
+@@ -0,0 +1,100 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Live search: nsIMsgSearchSession with the online scope on a JMAP folder
++ * runs `Email/query` against Stalwart's full-text index.
++ */
++
++let alice;
++const TOKEN = `zebrafish${RUN_ID}`;
++const SUBJECT = `Live search ${RUN_ID}`;
++
++add_setup(async function () {
++  if (!LIVE_CONFIG) {
++    return;
++  }
++  alice = await createLiveAccount("alice@test.localhost");
++  registerCleanupFunction(() => destroyBySubject(alice.server, SUBJECT));
++});
++
++/**
++ * Run an online search on `folder` and return the hit subjects.
++ *
++ * @param {nsIMsgFolder} folder
++ * @param {number} attrib
++ * @param {string} text
++ * @returns {Promise<string[]>}
++ */
++async function onlineSearch(folder, attrib, text) {
++  const session = Cc[
++    "@mozilla.org/messenger/searchSession;1"
++  ].createInstance(Ci.nsIMsgSearchSession);
++  session.addScopeTerm(Ci.nsMsgSearchScope.onlineMail, folder);
++  const term = session.createTerm();
++  term.attrib = attrib;
++  term.op = Ci.nsMsgSearchOp.Contains;
++  const value = term.value;
++  value.attrib = attrib;
++  value.str = text;
++  term.value = value;
++  session.appendTerm(term);
++  const subjects = [];
++  await new Promise(resolve => {
++    session.registerListener({
++      onSearchHit(hdr) {
++        subjects.push(hdr.mime2DecodedSubject);
++      },
++      onSearchDone: resolve,
++      onNewSearch() {},
++    });
++    session.search(null);
++  });
++  return subjects;
++}
++
++add_live_task(async function test_onlineBodySearch() {
++  await syncAll(alice.server);
++  const inbox = folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox);
++  const file = await writeMessageFile({
++    from: alice.email,
++    to: alice.email,
++    subject: SUBJECT,
++    body: `The secret word is ${TOKEN} today.`,
++  });
++  const copyListener = new PromiseTestUtils.PromiseCopyListener();
++  MailServices.copy.copyFileMessage(
++    file,
++    inbox,
++    null,
++    false,
++    0,
++    "",
++    copyListener,
++    null
++  );
++  await copyListener.promise;
++  await waitForHeader(
++    alice.server,
++    () => folderWithFlag(alice.server, Ci.nsMsgFolderFlags.Inbox),
++    SUBJECT
++  );
++
++  // Stalwart indexes asynchronously; poll.
++  let subjects = [];
++  await pollUntil(async () => {
++    subjects = await onlineSearch(inbox, Ci.nsMsgSearchAttrib.Body, TOKEN);
++    return subjects.includes(SUBJECT);
++  }, "body search finds the message through the server index");
++
++  subjects = await onlineSearch(inbox, Ci.nsMsgSearchAttrib.AnyText, TOKEN);
++  Assert.ok(subjects.includes(SUBJECT), "full-text search finds it too");
++
++  subjects = await onlineSearch(
++    inbox,
++    Ci.nsMsgSearchAttrib.Body,
++    `nomatch${RUN_ID}`
++  );
++  Assert.deepEqual(subjects, [], "an unknown word finds nothing");
++});
 diff --git a/mailnews/protocols/jmap/test/live/test_live_settings_push.js b/mailnews/protocols/jmap/test/live/test_live_settings_push.js
 new file mode 100644
 index 00000000000..c87d51cbe8e
@@ -32788,10 +34053,10 @@ index 00000000000..c87d51cbe8e
 +});
 diff --git a/mailnews/protocols/jmap/test/live/xpcshell.toml b/mailnews/protocols/jmap/test/live/xpcshell.toml
 new file mode 100644
-index 00000000000..e298cf9b9ca
+index 00000000000..ae0d30be1e2
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/live/xpcshell.toml
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +[DEFAULT]
 +# LIVE tests against a local Stalwart JMAP server on 127.0.0.1:8080.
 +# Tasks skip themselves when $JMAP_LIVE_ACCOUNTS (or the default account
@@ -32807,6 +34072,8 @@ index 00000000000..e298cf9b9ca
 +["test_live_mail.js"]
 +
 +["test_live_oauth.js"]
++
++["test_live_search.js"]
 +
 +["test_live_settings_push.js"]
 +
@@ -36764,6 +38031,329 @@ index 00000000000..cf0e4435ebc
 +  JmapPush.stop("push2");
 +  Services.prefs.clearUserPref("mail.jmap.push.enabled");
 +});
+diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_search.js b/mailnews/protocols/jmap/test/unit/test_jmap_search.js
+new file mode 100644
+index 00000000000..3abb6ee65b4
+--- /dev/null
++++ b/mailnews/protocols/jmap/test/unit/test_jmap_search.js
+@@ -0,0 +1,317 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Tests for server-side search: nsIMsgSearchSession terms on a JMAP folder
++ * with the online scope are translated into an `Email/query` filter, and the
++ * returned ids are reported as hits from the local database. Also checks that
++ * synced messages are announced to Gloda (the global search indexer).
++ */
++
++var { MailServices } = ChromeUtils.importESModule(
++  "resource:///modules/MailServices.sys.mjs"
++);
++var { MockRegistrar } = ChromeUtils.importESModule(
++  "resource://testing-common/MockRegistrar.sys.mjs"
++);
++var { JmapFolderStore } = ChromeUtils.importESModule(
++  "resource:///modules/jmap/JmapFolderStore.sys.mjs"
++);
++
++/** The protocol client the JMAP server gets; it only answers Email/query. */
++const mockClient = {
++  QueryInterface: ChromeUtils.generateQI(["IJmapClient"]),
++  queries: [],
++  // Ids the next query returns, or a function of the parsed filter.
++  answer: [],
++  initialize() {},
++  get incomingServerKey() {
++    return "";
++  },
++  get running() {
++    return false;
++  },
++  get idle() {
++    return true;
++  },
++  shutdown() {},
++  queryEmails(filterJSON, limit, listener) {
++    const filter = JSON.parse(filterJSON);
++    this.queries.push(filter);
++    const ids =
++      typeof this.answer == "function" ? this.answer(filter) : this.answer;
++    Services.tm.dispatchToMainThread(() =>
++      listener.onSuccess(JSON.stringify(ids))
++    );
++  },
++};
++
++let server;
++let inbox;
++let other;
++
++add_setup(function () {
++  do_get_profile();
++  Services.io.offline = false;
++  MockRegistrar.register("@mozilla.org/messenger/jmap-client;1", mockClient);
++
++  server = MailServices.accounts.createIncomingServer(
++    "user",
++    "jmap.example.com",
++    "jmap"
++  );
++  const account = MailServices.accounts.createAccount();
++  account.incomingServer = server;
++  server.QueryInterface(Ci.IJmapIncomingServer);
++  server.createFolderForMailbox("mb-inbox", "", "Inbox", Ci.nsMsgFolderFlags.Inbox);
++  server.createFolderForMailbox("mb-other", "", "Other", 0);
++  inbox = server.rootFolder.getChildNamed("Inbox");
++  other = server.rootFolder.getChildNamed("Other");
++  Assert.equal(inbox.getStringProperty("jmapId"), "mb-inbox");
++
++  const add = (folder, id, subject) => {
++    const db = folder.msgDatabase;
++    const hdr = db.createNewHdr();
++    hdr.subject = subject;
++    hdr.author = "Alice <alice@example.com>";
++    hdr.date = Date.now() * 1000;
++    hdr.setStringProperty("jmapId", id);
++    db.attachHdr(hdr, true);
++  };
++  add(inbox, "e1", "Invoice March");
++  add(inbox, "e2", "Holiday plans");
++  add(inbox, "e3", "Fatura Şubat");
++  add(other, "e4", "Other folder");
++
++  registerCleanupFunction(() => {
++    MailServices.accounts.removeAccount(account, false);
++  });
++});
++
++/**
++ * Build a term.
++ *
++ * @param {nsIMsgSearchSession} session
++ * @param {object} spec
++ * @returns {nsIMsgSearchTerm}
++ */
++function makeTerm(
++  session,
++  { attrib, op = Ci.nsMsgSearchOp.Contains, str, status, and = true, begins = false, ends = false }
++) {
++  const term = session.createTerm();
++  term.attrib = attrib;
++  term.op = op;
++  const value = term.value;
++  value.attrib = attrib;
++  if (str !== undefined) {
++    value.str = str;
++  }
++  if (status !== undefined) {
++    value.status = status;
++  }
++  term.value = value;
++  term.booleanAnd = and;
++  term.beginsGrouping = begins;
++  term.endsGrouping = ends;
++  return term;
++}
++
++/**
++ * Run an online search over `folders` and collect the hit subjects.
++ *
++ * @param {nsIMsgFolder[]} folders
++ * @param {object[]} specs
++ * @returns {Promise<{subjects: string[], status: number, filters: object[]}>}
++ */
++async function runSearch(folders, specs) {
++  const session = Cc[
++    "@mozilla.org/messenger/searchSession;1"
++  ].createInstance(Ci.nsIMsgSearchSession);
++  for (const folder of folders) {
++    session.addScopeTerm(Ci.nsMsgSearchScope.onlineMail, folder);
++  }
++  for (const spec of specs) {
++    session.appendTerm(makeTerm(session, spec));
++  }
++  mockClient.queries = [];
++  const subjects = [];
++  const status = await new Promise(resolve => {
++    session.registerListener({
++      onSearchHit(hdr) {
++        subjects.push(hdr.mime2DecodedSubject);
++      },
++      onSearchDone: resolve,
++      onNewSearch() {},
++    });
++    session.search(null);
++  });
++  return { subjects: subjects.sort(), status, filters: mockClient.queries };
++}
++
++const A = Ci.nsMsgSearchAttrib;
++
++add_task(async function test_text_search_uses_server_index() {
++  mockClient.answer = ["e1", "e4"]; // e4 is not in this folder.
++  const { subjects, status, filters } = await runSearch(
++    [inbox],
++    [{ attrib: A.AnyText, str: "invoice" }]
++  );
++  Assert.equal(status, Cr.NS_OK);
++  Assert.deepEqual(filters, [
++    {
++      operator: "AND",
++      conditions: [{ inMailbox: "mb-inbox" }, { text: "invoice" }],
++    },
++  ]);
++  Assert.deepEqual(subjects, ["Invoice March"]);
++});
++
++add_task(async function test_property_translation() {
++  mockClient.answer = [];
++  const cases = [
++    [{ attrib: A.Subject, str: "s" }, { subject: "s" }],
++    [{ attrib: A.Sender, str: "alice" }, { from: "alice" }],
++    [{ attrib: A.To, str: "bob" }, { to: "bob" }],
++    [{ attrib: A.CC, str: "carol" }, { cc: "carol" }],
++    [{ attrib: A.Body, str: "lorem" }, { body: "lorem" }],
++    [
++      { attrib: A.Body, op: Ci.nsMsgSearchOp.DoesntContain, str: "spam" },
++      { operator: "NOT", conditions: [{ body: "spam" }] },
++    ],
++    [
++      { attrib: A.ToOrCC, str: "dave" },
++      { operator: "OR", conditions: [{ to: "dave" }, { cc: "dave" }] },
++    ],
++    [
++      {
++        attrib: A.MsgStatus,
++        op: Ci.nsMsgSearchOp.Isnt,
++        status: Ci.nsMsgMessageFlags.Read,
++      },
++      { notKeyword: "$seen" },
++    ],
++  ];
++  for (const [spec, expected] of cases) {
++    const { status, filters } = await runSearch([inbox], [spec]);
++    Assert.equal(status, Cr.NS_OK);
++    Assert.deepEqual(
++      filters[0],
++      { operator: "AND", conditions: [{ inMailbox: "mb-inbox" }, expected] },
++      `attribute ${spec.attrib}`
++    );
++  }
++});
++
++add_task(async function test_grouping_like_quick_filter() {
++  // Quick Filter: unread AND (subject OR from OR body contains "x").
++  mockClient.answer = ["e2"];
++  const { subjects, filters } = await runSearch(
++    [inbox],
++    [
++      {
++        attrib: A.MsgStatus,
++        op: Ci.nsMsgSearchOp.Isnt,
++        status: Ci.nsMsgMessageFlags.Read,
++      },
++      { attrib: A.Subject, str: "x", and: true, begins: true },
++      { attrib: A.Sender, str: "x", and: false },
++      { attrib: A.Body, str: "x", and: false, ends: true },
++    ]
++  );
++  Assert.deepEqual(filters[0].conditions[1], {
++    operator: "AND",
++    conditions: [
++      { notKeyword: "$seen" },
++      {
++        operator: "OR",
++        conditions: [{ subject: "x" }, { from: "x" }, { body: "x" }],
++      },
++    ],
++  });
++  Assert.deepEqual(subjects, ["Holiday plans"]);
++});
++
++add_task(async function test_non_ascii_terms() {
++  // Non-ASCII terms used to crash in the IMAP encoder for non-IMAP folders.
++  mockClient.answer = ["e3"];
++  const { subjects, filters } = await runSearch(
++    [inbox],
++    [{ attrib: A.Subject, str: "Şubat" }]
++  );
++  Assert.deepEqual(filters[0].conditions[1], { subject: "Şubat" });
++  Assert.deepEqual(subjects, ["Fatura Şubat"]);
++});
++
++add_task(async function test_multiple_folders() {
++  mockClient.answer = filter =>
++    filter.conditions[0].inMailbox == "mb-other" ? ["e4"] : ["e1", "e2"];
++  const { subjects, filters } = await runSearch(
++    [inbox, other],
++    [{ attrib: A.AnyText, str: "a" }]
++  );
++  Assert.equal(filters.length, 2, "one query per folder");
++  Assert.deepEqual(subjects, ["Holiday plans", "Invoice March", "Other folder"]);
++});
++
++add_task(function test_server_scope() {
++  Assert.equal(server.searchScope, Ci.nsMsgSearchScope.onlineMail);
++  Assert.ok(server.canSearchMessages);
++});
++
++add_task(async function test_store_announces_messages_to_gloda() {
++  Services.prefs.setBoolPref("mailnews.database.global.indexer.enabled", true);
++  const classified = [];
++  const listener = {
++    msgsClassified(msgs) {
++      classified.push(...msgs.map(m => m.getStringProperty("jmapId")));
++    },
++  };
++  MailServices.mfn.addListener(listener, Ci.nsIMsgFolderNotificationService.msgsClassified);
++
++  const store = new JmapFolderStore({
++    server: { createFolderForMailbox() {} },
++    rootFolder: server.rootFolder,
++  });
++  // The existing, never indexed headers are offered once per session.
++  await store.prepare([]);
++  const email = {
++    id: "e5",
++    threadId: "t5",
++    mailboxIds: { "mb-other": true },
++    keywords: {},
++    from: [{ name: "Bob", email: "bob@example.com" }],
++    subject: "Synced",
++    receivedAt: "2026-01-02T03:04:05Z",
++    size: 10,
++    messageId: ["<e5@example.com>"],
++  };
++  store.create(other, normalizeEmail(email), { isNew: false });
++  // New Inbox mail goes through the junk classifier instead.
++  store.create(
++    inbox,
++    normalizeEmail({ ...email, id: "e6", mailboxIds: { "mb-inbox": true } }),
++    { isNew: true }
++  );
++  await store.flush();
++  MailServices.mfn.removeListener(listener);
++
++  // (The junk classifier may announce e6 on its own, asynchronously.)
++  Assert.deepEqual(
++    classified.filter(id => id != "e6").sort(),
++    ["e1", "e2", "e3", "e4", "e5"]
++  );
++
++  // A second store in the same session does not re-announce old headers.
++  classified.length = 0;
++  MailServices.mfn.addListener(listener, Ci.nsIMsgFolderNotificationService.msgsClassified);
++  const again = new JmapFolderStore({
++    server: { createFolderForMailbox() {} },
++    rootFolder: server.rootFolder,
++  });
++  await again.prepare([]);
++  await again.flush();
++  MailServices.mfn.removeListener(listener);
++  Assert.deepEqual(classified, []);
++});
 diff --git a/mailnews/protocols/jmap/test/unit/test_jmap_session.js b/mailnews/protocols/jmap/test/unit/test_jmap_session.js
 new file mode 100644
 index 00000000000..9319895b3ad
@@ -37999,10 +39589,10 @@ index 00000000000..278fae568fe
 +});
 diff --git a/mailnews/protocols/jmap/test/unit/xpcshell.toml b/mailnews/protocols/jmap/test/unit/xpcshell.toml
 new file mode 100644
-index 00000000000..a1d1699ed89
+index 00000000000..9bd1b1628b6
 --- /dev/null
 +++ b/mailnews/protocols/jmap/test/unit/xpcshell.toml
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,48 @@
 +[DEFAULT]
 +head = "head.js"
 +
@@ -38017,6 +39607,8 @@ index 00000000000..a1d1699ed89
 +["test_jmap_message_builder.js"]
 +
 +["test_jmap_mutations.js"]
++
++["test_jmap_search.js"]
 +
 +["test_jmap_sync.js"]
 +
@@ -38061,3 +39653,19 @@ index aecad69daab..1d530d89098 100644
  ]
  
  TEST_DIRS += ["exchange/test"]
+diff --git a/mailnews/search/src/nsMsgImapSearch.cpp b/mailnews/search/src/nsMsgImapSearch.cpp
+index a560de23f96..18dbe102812 100644
+--- a/mailnews/search/src/nsMsgImapSearch.cpp
++++ b/mailnews/search/src/nsMsgImapSearch.cpp
+@@ -127,7 +127,10 @@ nsresult nsMsgSearchOnlineMail::Encode(
+       NS_ENSURE_SUCCESS(err, err);
+       nsCOMPtr<nsIMsgImapMailFolder> imapFolder = do_QueryInterface(folder);
+       bool utf8AcceptEnabled = false;
+-      imapFolder->GetShouldUseUtf8FolderName(&utf8AcceptEnabled);
++      // Other protocols using the online scope (JMAP) have no IMAP folder.
++      if (imapFolder) {
++        imapFolder->GetShouldUseUtf8FolderName(&utf8AcceptEnabled);
++      }
+       if (!utf8AcceptEnabled) pEncoding.Append(charsetParam);
+     }
+     pEncoding.Append(imapTerms);
