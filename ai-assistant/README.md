@@ -133,7 +133,9 @@ installed and logged in on your computer, through a small helper program
 (a native messaging host) in `native/`:
 
 1. Install Node.js and Claude Code, and log in to Claude Code once.
-2. Run `powershell -ExecutionPolicy Bypass -File native\install.ps1`. It
+2. On Linux run `native/install.sh` (it puts the helper in `~/.local/share/thunderbird-ai-assistant/native`
+   and registers it under `~/.mozilla/native-messaging-hosts`; `native/uninstall.sh` removes it). On Windows run
+   `powershell -ExecutionPolicy Bypass -File native\install.ps1`. It
    copies the helper to `%LOCALAPPDATA%\thunderbird-ai-assistant\native`,
    writes its manifest and registers it under
    `HKCU\Software\Mozilla\NativeMessagingHosts\ai_assistant_claude` (the key

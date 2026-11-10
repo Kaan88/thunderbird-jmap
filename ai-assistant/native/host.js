@@ -48,13 +48,15 @@ function shutdown() {
 // ---- claude path ----
 function resolveClaude(p) {
   if (p && fs.existsSync(p)) return p;
+  const win = process.platform === "win32";
   try {
-    const out = execFileSync("where", ["claude"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const out = execFileSync(win ? "where" : "which", ["claude"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
     const lines = out.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const exe = lines.find(l => /\.exe$/i.test(l)) || lines[0];
+    const exe = (win && lines.find(l => /\.exe$/i.test(l))) || lines[0];
     if (exe) return exe;
   } catch {}
-  return path.join(process.env.USERPROFILE || os.homedir(), ".local", "bin", "claude.exe");
+  if (win) return path.join(process.env.USERPROFILE || os.homedir(), ".local", "bin", "claude.exe");
+  return path.join(os.homedir(), ".local", "bin", "claude");
 }
 
 // ---- runs ----

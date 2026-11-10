@@ -93,7 +93,7 @@ the app build, so include it with each release:
 
 To preinstall it for a profile, copy the `.xpi` to `<profile>/extensions/ai-assistant@thunderbird-jmap.xpi`
 and set `extensions.autoDisableScopes` to `0` in `user.js`. The "Claude on this computer"
-option also needs the helper in `ai-assistant/native/` (`install.ps1` is Windows only); see
+option also needs the helper in `ai-assistant/native/` (`install.sh` on Linux, `install.ps1` on Windows); see
 `ai-assistant/README.md`.
 
 ## Source
