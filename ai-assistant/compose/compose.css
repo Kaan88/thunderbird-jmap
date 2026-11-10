@@ -1,0 +1,82 @@
+body {
+  width: 420px;
+  padding: 10px 12px 12px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+header select {
+  max-width: 170px;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.spacer {
+  flex: 1;
+}
+#target {
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+.section {
+  display: block;
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.row textarea,
+.row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.notice {
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 6px 0;
+}
+.notice p {
+  margin: 0 0 6px;
+}
+#result-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  min-height: 60px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.typing::after {
+  content: "…";
+  color: var(--fg-soft);
+}
+.error {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.buttons {
+  margin-top: 8px;
+}

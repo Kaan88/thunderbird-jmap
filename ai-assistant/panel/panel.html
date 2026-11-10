@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI assistant</title>
+    <link rel="stylesheet" href="../lib/ui.css" />
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header id="top">
+      <svg class="icon sparkle" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" />
+        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+      </svg>
+      <h1>AI assistant</h1>
+      <span class="spacer"></span>
+      <select id="provider" title="AI service and model"></select>
+      <select id="effort" title="Effort: how long the model may think"></select>
+      <button id="new-chat" class="ghost" title="New chat">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.7" /><path d="M4 20v-5h5" /></svg>
+      </button>
+      <button id="settings" class="ghost" title="Settings">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+      </button>
+      <button id="close" class="ghost" title="Close">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+    </header>
+    <div id="context" class="muted"></div>
+
+    <main id="log" aria-live="polite">
+      <section id="empty">
+        <p id="empty-text"></p>
+        <div id="quick" class="chips"></div>
+        <div id="setup" class="notice hidden">
+          <p>Set up an AI service first: an OpenAI-compatible one (OpenAI, Ollama, …) or Anthropic.</p>
+          <button id="open-settings" class="primary">Open settings</button>
+        </div>
+      </section>
+    </main>
+
+    <footer id="composer">
+      <div id="access" class="notice hidden">
+        <p>The assistant needs your permission to talk to <strong id="access-host"></strong>.</p>
+        <button id="grant" class="primary">Allow</button>
+      </div>
+      <div id="selection" class="hidden">
+        <span class="label">Highlighted:</span>
+        <span id="selection-text"></span>
+        <button id="selection-clear" class="ghost" title="Don't use the highlighted passage">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="inputbox">
+        <textarea id="input" rows="2" placeholder="Ask about this message…"></textarea>
+        <div class="row">
+          <div class="menu-wrap">
+            <button id="actions" class="ghost" aria-haspopup="menu" aria-expanded="false">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" /></svg>
+              Actions
+              <svg class="icon small" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            <div id="menu" role="menu" class="hidden"></div>
+          </div>
+          <span class="spacer"></span>
+          <button id="send" class="primary round" title="Send (Enter)">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+          </button>
+          <button id="stop" class="round hidden" title="Stop">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

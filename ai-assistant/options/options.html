@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Assistant settings</title>
+    <link rel="stylesheet" href="../lib/ui.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>AI Assistant</h1>
+      <p class="muted">
+        The assistant sends the message you are looking at, your question and anything it looks up to the AI
+        service you choose here — only when you ask. Keys are stored in this Thunderbird profile only.
+      </p>
+
+      <form id="form" autocomplete="off">
+        <section>
+          <h2>OpenAI-compatible service</h2>
+          <p class="muted">OpenAI, Ollama, LM Studio, OpenRouter or any service that speaks the Chat Completions API.</p>
+          <label>API address
+            <input type="url" name="openaiBaseUrl" placeholder="https://api.openai.com/v1" />
+            <small class="muted">Up to and including /v1. Ollama: http://localhost:11434/v1. Leave empty to not use it.</small>
+          </label>
+          <label>API key
+            <span class="secret"><input type="password" name="openaiKey" placeholder="sk-…" /><button type="button" class="reveal">Show</button></span>
+            <small class="muted">Ollama needs no key; leave it empty.</small>
+          </label>
+          <label>Model
+            <input type="text" name="openaiModel" placeholder="gpt-4o-mini, or qwen2.5:7b on Ollama" />
+          </label>
+          <div class="row"><button type="button" data-test="openai">Test connection</button><span class="test-result" id="test-openai"></span></div>
+        </section>
+
+        <section>
+          <h2>Anthropic</h2>
+          <label>API address
+            <input type="url" name="anthropicBaseUrl" placeholder="https://api.anthropic.com/v1" />
+            <small class="muted">https://api.anthropic.com/v1, or a gateway that speaks the Messages API.</small>
+          </label>
+          <label>API key
+            <span class="secret"><input type="password" name="anthropicKey" placeholder="sk-ant-…" /><button type="button" class="reveal">Show</button></span>
+          </label>
+          <label>Model
+            <input type="text" name="anthropicModel" placeholder="claude-haiku-5-5" />
+            <small class="muted">For example claude-haiku-5-5 (fast and cheap), claude-haiku-4-5, claude-sonnet-5-5 or claude-opus-5-5.</small>
+          </label>
+          <div class="row"><button type="button" data-test="anthropic">Test connection</button><span class="test-result" id="test-anthropic"></span></div>
+          <fieldset class="models">
+            <legend>Models in the panel's menu</legend>
+            <div id="models-anthropic" class="model-list"></div>
+            <div class="row"><button type="button" id="refresh-models">Get the list from Anthropic</button><span class="test-result" id="refresh-result"></span></div>
+            <small class="muted">Untick models you don't want to see. The default model above is always offered.</small>
+          </fieldset>
+        </section>
+
+        <section>
+          <h2>Claude on this computer</h2>
+          <p class="muted">Uses the Claude Code app you have installed and its login, so no API key is needed. Needs the small helper from the add-on's <code>native</code> folder (run <code>native\install.ps1</code> once).</p>
+          <label class="check"><input type="checkbox" name="claudeLocal" /> Use Claude on this computer</label>
+          <label>Model
+            <input type="text" name="claudeModel" list="claude-models" placeholder="claude-sonnet-5-5" />
+            <datalist id="claude-models">
+              <option value="claude-fable-5-1">Fable 5.1</option>
+              <option value="claude-opus-5-5">Opus 5.5</option>
+              <option value="claude-sonnet-5-5">Sonnet 5.5</option>
+              <option value="claude-haiku-5-5">Haiku 5.5</option>
+              <option value="default">Claude Code's own default</option>
+            </datalist>
+            <small class="muted">The model used by default. All of these can be picked in the panel too; any model name Claude Code accepts works (e.g. opus, sonnet).</small>
+          </label>
+          <label>Path to claude.exe (optional)
+            <input type="text" name="claudePath" placeholder="Found automatically" />
+          </label>
+          <div class="row"><button type="button" data-test="claude">Test</button><span class="test-result" id="test-claude"></span></div>
+          <fieldset class="models">
+            <legend>Models in the panel's menu</legend>
+            <div id="models-claude" class="model-list"></div>
+            <small class="muted">Untick models you don't want to see. The default model above is always offered.</small>
+          </fieldset>
+        </section>
+
+        <section>
+          <h2>Assistant</h2>
+          <label>Default service
+            <select name="defaultProvider">
+              <option value="openai">OpenAI-compatible</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="claude">Claude on this computer</option>
+            </select>
+            <small class="muted">Used when several services are set up. You can switch in the panel.</small>
+          </label>
+          <label>Instructions for the assistant
+            <textarea name="instructions" rows="12" class="long" placeholder="For example:&#10;Write in British English.&#10;Sign off with &quot;Kind regards, Kaan&quot;.&#10;Never promise delivery dates."></textarea>
+            <small class="muted">Added to every request: your tone, sign-offs, languages, things never to say, background about you and your work. No length limit (very long instructions make every request slower and, with paid services, more expensive). <span id="instructions-count"></span></small>
+          </label>
+          <label>Effort
+            <select name="effort">
+              <option value="">Model default</option>
+              <option value="low">Low: fastest, cheapest</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="max">Max: most thorough, slowest</option>
+            </select>
+            <small class="muted">How long Claude models may think before answering (Anthropic service and Claude on this computer; Claude 5 models). You can also change it in the panel.</small>
+          </label>
+          <label>Translate to
+            <input type="text" name="translateTo" placeholder="English" />
+          </label>
+          <label class="check"><input type="checkbox" name="lookups" /> Let the assistant look things up in my mail, calendar and contacts</label>
+          <label>Actions
+            <select name="actions">
+              <option value="off">Off: the assistant only answers</option>
+              <option value="ask">Ask first: I confirm each action</option>
+              <option value="auto">Automatic: act without asking (sending and deleting still ask)</option>
+            </select>
+            <small class="muted">Everything Thunderbird allows: organize mail, folders and tags, write, save and send mail, contacts and mailing lists, events and tasks, and JMAP server settings (out-of-office, filters, identities…). Sending mail and deleting anything always shows you what will happen and waits for your click.</small>
+          </label>
+          <label>Saved prompts
+            <textarea name="prompts" rows="4" placeholder="One per line — Name: what to ask&#10;Key dates: List every date and deadline in this message."></textarea>
+            <small class="muted">They appear in the panel's Actions menu.</small>
+          </label>
+        </section>
+
+        <div class="row sticky">
+          <button type="submit" class="primary">Save</button>
+          <span id="status" class="muted" role="status"></span>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

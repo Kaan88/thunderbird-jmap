@@ -1,0 +1,111 @@
+[
+  {
+    "namespace": "aiCalendar",
+    "description": "Minimal read/create access to Thunderbird's calendars for the AI assistant.",
+    "functions": [
+      {
+        "name": "listCalendars",
+        "type": "function",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "queryItems",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "query",
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["event", "task"] },
+              "rangeStart": { "type": "string", "optional": true },
+              "rangeEnd": { "type": "string", "optional": true },
+              "calendarId": { "type": "string", "optional": true },
+              "includeCompleted": { "type": "boolean", "optional": true },
+              "limit": { "type": "integer", "optional": true, "minimum": 1, "maximum": 500 }
+            }
+          }
+        ]
+      },
+      {
+        "name": "createEvent",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "event",
+            "type": "object",
+            "properties": {
+              "calendarId": { "type": "string", "optional": true },
+              "title": { "type": "string" },
+              "start": { "type": "string" },
+              "end": { "type": "string", "optional": true },
+              "allDay": { "type": "boolean", "optional": true },
+              "location": { "type": "string", "optional": true },
+              "description": { "type": "string", "optional": true }
+            }
+          }
+        ]
+      },
+      {
+        "name": "createTask",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "task",
+            "type": "object",
+            "properties": {
+              "calendarId": { "type": "string", "optional": true },
+              "title": { "type": "string" },
+              "due": { "type": "string", "optional": true },
+              "description": { "type": "string", "optional": true }
+            }
+          }
+        ]
+      },
+      {
+        "name": "getItem",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "id", "type": "string" },
+          { "name": "calendarId", "type": "string", "optional": true }
+        ]
+      },
+      {
+        "name": "updateItem",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "change",
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "calendarId": { "type": "string", "optional": true },
+              "title": { "type": "string", "optional": true },
+              "start": { "type": "string", "optional": true },
+              "end": { "type": "string", "optional": true },
+              "allDay": { "type": "boolean", "optional": true },
+              "due": { "type": "string", "optional": true },
+              "location": { "type": "string", "optional": true },
+              "description": { "type": "string", "optional": true },
+              "completed": { "type": "boolean", "optional": true }
+            }
+          }
+        ]
+      },
+      {
+        "name": "deleteItem",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "id", "type": "string" },
+          { "name": "calendarId", "type": "string", "optional": true }
+        ]
+      }
+    ]
+  }
+]

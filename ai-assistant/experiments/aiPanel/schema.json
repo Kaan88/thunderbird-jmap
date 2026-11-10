@@ -1,0 +1,37 @@
+[
+  {
+    "namespace": "aiPanel",
+    "description": "Docks an extension page next to the message reader (inside about:message).",
+    "functions": [
+      {
+        "name": "show",
+        "type": "function",
+        "async": true,
+        "description": "Shows the panel next to the message in the given tab, creating it if needed.",
+        "parameters": [
+          { "name": "tabId", "type": "integer", "minimum": 0 },
+          { "name": "path", "type": "string", "description": "Extension-relative page path, e.g. panel/panel.html?tabId=3" }
+        ]
+      },
+      {
+        "name": "hide",
+        "type": "function",
+        "async": true,
+        "parameters": [{ "name": "tabId", "type": "integer", "minimum": 0 }]
+      },
+      {
+        "name": "getDisplayedMessage",
+        "type": "function",
+        "async": true,
+        "description": "The message shown in the tab's reader (a MessageHeader), or null.",
+        "parameters": [{ "name": "tabId", "type": "integer", "minimum": 0 }]
+      },
+      {
+        "name": "isOpen",
+        "type": "function",
+        "async": true,
+        "parameters": [{ "name": "tabId", "type": "integer", "minimum": 0 }]
+      }
+    ]
+  }
+]

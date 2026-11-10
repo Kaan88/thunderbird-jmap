@@ -1,0 +1,100 @@
+body {
+  font-size: 14px;
+}
+main {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+h1 {
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 16px 0;
+  background: var(--bg);
+}
+section > p {
+  margin: 0 0 10px;
+}
+label {
+  display: block;
+  margin: 10px 0;
+  font-weight: 500;
+}
+label input[type="text"],
+label input[type="url"],
+label input[type="password"],
+label select,
+label textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  font-weight: normal;
+}
+label small {
+  display: block;
+  font-weight: normal;
+  margin-top: 3px;
+}
+label.check {
+  font-weight: normal;
+}
+.secret {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.secret input {
+  flex: 1;
+  margin-top: 0 !important;
+}
+fieldset.models {
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 6px);
+  margin: 10px 0 0;
+  padding: 6px 10px 8px;
+}
+.model-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 12px;
+  margin: 4px 0 6px;
+}
+.model-list label {
+  font-weight: normal;
+  margin: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.test-result {
+  font-size: 13px;
+}
+.test-result.ok {
+  color: var(--ok);
+}
+.test-result.bad {
+  color: var(--danger);
+}
+.sticky {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+textarea.long {
+  min-height: 14em;
+  resize: vertical;
+}

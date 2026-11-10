@@ -1,0 +1,67 @@
+[
+  {
+    "namespace": "aiJmap",
+    "description": "JMAP access through Thunderbird's own JMAP sessions (thunderbird-jmap build).",
+    "functions": [
+      {
+        "name": "listAccounts",
+        "type": "function",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "request",
+        "type": "function",
+        "async": true,
+        "description": "Runs JMAP method calls on one account's session. Method errors are returned, not thrown.",
+        "parameters": [
+          { "name": "account", "type": "string", "description": "Server key, account id, name or email; empty for the first JMAP account." },
+          {
+            "name": "calls",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "args": { "type": "object", "additionalProperties": { "type": "any" }, "optional": true },
+                "callId": { "type": "string", "optional": true }
+              }
+            }
+          },
+          { "name": "using", "type": "array", "items": { "type": "string" }, "optional": true }
+        ]
+      },
+      {
+        "name": "downloadText",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "account", "type": "string" },
+          { "name": "blobId", "type": "string" },
+          {
+            "name": "options",
+            "type": "object",
+            "optional": true,
+            "properties": {
+              "accountId": { "type": "string", "optional": true },
+              "type": { "type": "string", "optional": true },
+              "name": { "type": "string", "optional": true },
+              "maxChars": { "type": "integer", "optional": true }
+            }
+          }
+        ]
+      },
+      {
+        "name": "uploadText",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "account", "type": "string" },
+          { "name": "text", "type": "string" },
+          { "name": "type", "type": "string", "optional": true },
+          { "name": "accountId", "type": "string", "optional": true }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI writing help</title>
+    <link rel="stylesheet" href="../lib/ui.css" />
+    <link rel="stylesheet" href="compose.css" />
+  </head>
+  <body>
+    <header>
+      <strong>AI writing help</strong>
+      <span class="spacer"></span>
+      <select id="provider" title="AI service"></select>
+    </header>
+    <p id="target" class="muted"></p>
+
+    <div id="setup" class="notice hidden">
+      <p>Set up an AI service first.</p>
+      <button id="open-settings" class="primary">Open settings</button>
+    </div>
+    <div id="access" class="notice hidden">
+      <p>The assistant needs your permission to talk to <strong id="access-host"></strong>.</p>
+      <button id="grant" class="primary">Allow</button>
+    </div>
+
+    <section id="tools">
+      <label for="ask" class="section">Write</label>
+      <div class="row">
+        <textarea id="ask" rows="2" placeholder="What should the email say? e.g. accept, but ask to move it to Friday"></textarea>
+      </div>
+      <div class="row">
+        <button id="write" class="primary">Write draft</button>
+      </div>
+
+      <div class="section">Rewrite</div>
+      <div class="chips">
+        <button class="chip" data-rewrite="improve">Improve</button>
+        <button class="chip" data-rewrite="grammar">Fix spelling</button>
+        <button class="chip" data-rewrite="shorter">Shorter</button>
+        <button class="chip" data-rewrite="longer">Longer</button>
+      </div>
+      <div class="row">
+        <label for="tone" class="muted">Tone</label>
+        <select id="tone">
+          <option value="formal">More formal</option>
+          <option value="friendly">Friendlier</option>
+          <option value="direct">More direct</option>
+        </select>
+        <button id="tone-go">Change tone</button>
+      </div>
+      <div class="row">
+        <input type="text" id="custom" placeholder="Or say how to change it…" />
+        <button id="custom-go">Rewrite</button>
+      </div>
+
+      <div class="section">Translate</div>
+      <div class="row">
+        <input type="text" id="lang" list="langs" />
+        <datalist id="langs">
+          <option value="English"></option>
+          <option value="Turkish"></option>
+          <option value="German"></option>
+          <option value="French"></option>
+          <option value="Spanish"></option>
+          <option value="Italian"></option>
+          <option value="Dutch"></option>
+          <option value="Portuguese"></option>
+          <option value="Arabic"></option>
+          <option value="Japanese"></option>
+          <option value="Chinese"></option>
+        </datalist>
+        <button id="translate">Translate</button>
+      </div>
+    </section>
+
+    <section id="result" class="hidden">
+      <div class="section" id="result-title">Suggested text</div>
+      <div id="result-text" class="typing"></div>
+      <div id="result-error" class="error hidden"></div>
+      <div class="row buttons">
+        <button id="apply" class="primary" disabled>Replace</button>
+        <button id="copy" disabled>Copy</button>
+        <button id="again" disabled>Try again</button>
+        <span class="spacer"></span>
+        <button id="stop">Stop</button>
+        <button id="back" class="ghost">Back</button>
+      </div>
+    </section>
+    <script type="module" src="compose.js"></script>
+  </body>
+</html>

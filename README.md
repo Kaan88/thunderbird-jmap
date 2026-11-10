@@ -76,6 +76,26 @@ repository's latest `update.xml`. Thunderbird's normal updater then installs new
 releases. MARs are signed with this project's own key, which is built into the updater.
 Updates from Mozilla are not accepted.
 
+## AI assistant add-on (ship alongside the app)
+
+`ai-assistant/` is a separate Thunderbird add-on (`ai-assistant@thunderbird-jmap`): a side
+panel for reading, writing, searching and organizing mail, calendar and JMAP settings with
+OpenAI-compatible services, Anthropic, or Claude Code on your computer. It is not part of
+the app build, so include it with each release:
+
+1. Build it: `ai-assistant/build.sh` (Linux/macOS) or `powershell -File ai-assistant\build.ps1`
+   (Windows). The result is `ai-assistant/dist/ai-assistant-<version>.xpi`.
+2. Attach the `.xpi` to the GitHub release, for example
+   `gh release create ai-assistant-v<version> ai-assistant/dist/ai-assistant-<version>.xpi`.
+   Bump `version` in `ai-assistant/manifest.json` first.
+3. Users install it with *Add-ons and Themes > gear > Install Add-on From File*. It needs a
+   build that allows experiment add-ons, which this build does.
+
+To preinstall it for a profile, copy the `.xpi` to `<profile>/extensions/ai-assistant@thunderbird-jmap.xpi`
+and set `extensions.autoDisableScopes` to `0` in `user.js`. The "Claude on this computer"
+option also needs the helper in `ai-assistant/native/` (`install.ps1` is Windows only); see
+`ai-assistant/README.md`.
+
 ## Source
 
 `patches/thunderbird-jmap.patch` applies on top of comm-central
