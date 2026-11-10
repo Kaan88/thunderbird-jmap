@@ -1,0 +1,7 @@
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+# The AppImage mounts/extracts to a different path every launch, so Thunderbird's
+# per-install profile hash (installs.ini) changes each time and it creates a fresh
+# profile. Use the profiles.ini default profile instead.
+export MOZ_LEGACY_PROFILES=1
+exec "$HERE/usr/lib/thunderbird-jmap/thunderbird" "$@"

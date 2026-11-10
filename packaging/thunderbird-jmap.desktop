@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Thunderbird JMAP
+GenericName=Email Client
+Comment=Thunderbird with a native JMAP client for Stalwart Mail Server
+Exec=thunderbird-jmap %u
+Icon=thunderbird-jmap
+Terminal=false
+Categories=Network;Email;
+MimeType=message/rfc822;x-scheme-handler/mailto;text/calendar;
+StartupWMClass=thunderbird-jmap
