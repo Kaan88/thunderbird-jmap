@@ -19,8 +19,8 @@ cat > "$DEST/$NAME.json" <<JSON
   "allowed_extensions": ["ai-assistant@thunderbird-jmap"]
 }
 JSON
-# Thunderbird reads ~/.mozilla/native-messaging-hosts (and ~/.thunderbird/native-messaging-hosts).
-for d in "$HOME/.mozilla/native-messaging-hosts" "$HOME/.thunderbird/native-messaging-hosts"; do
+# Thunderbird reads ~/.mozilla/native-messaging-hosts. Do NOT create ~/.thunderbird: its presence makes Thunderbird use it instead of ~/.config/thunderbird and start a fresh profile.
+for d in "$HOME/.mozilla/native-messaging-hosts"; do
   mkdir -p "$d"; ln -sf "$DEST/$NAME.json" "$d/$NAME.json"
 done
 echo "node:     $NODE"
