@@ -3,6 +3,9 @@ HERE="$(dirname "$(readlink -f "$0")")"
 BIN="$HERE/usr/lib/thunderbird-jmap/thunderbird"
 # The per-install profile hash comes from the mount path, which changes every launch,
 # and the profile root switches to ~/.thunderbird if that folder exists. Pin one profile folder.
+# Make the "default mail client" check use the stable AppImage path instead of the
+# per-launch mount path, so setting Thunderbird as default sticks.
+[ -n "$APPIMAGE" ] && export MOZ_APP_LAUNCHER="$APPIMAGE"
 export MOZ_LEGACY_PROFILES=1   # if the user picks a profile by hand, don't add [Install*] sections
 for a in "$@"; do              # the user chose a profile: don't override it
   case "$(printf %s "$a" | tr '[:upper:]' '[:lower:]')" in

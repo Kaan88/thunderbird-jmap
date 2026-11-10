@@ -81,7 +81,9 @@ Updates from Mozilla are not accepted.
 `ai-assistant/` is a separate Thunderbird add-on (`ai-assistant@thunderbird-jmap`): a side
 panel for reading, writing, searching and organizing mail, calendar and JMAP settings with
 OpenAI-compatible services, Anthropic, or Claude Code on your computer. It is not part of
-the app build, so include it with each release:
+the app build, but it is bundled into the Linux AppImage (`build-appimage.sh`) and the Windows zip
+(`packaging/stage-release-windows.ps1`) under `distribution/extensions/`, so Thunderbird installs it
+into a profile on first start. To ship it separately as well:
 
 1. Build it: `ai-assistant/build.sh` (Linux/macOS) or `powershell -File ai-assistant\build.ps1`
    (Windows). The result is `ai-assistant/dist/ai-assistant-<version>.xpi`.
