@@ -114,6 +114,22 @@ To build an updater that accepts this project's MARs, replace
 `signing/jmapmar.der`. That file is the public certificate; the signing key is not in this
 repository.
 
+### Getting the signing key (maintainer only)
+
+The MAR signing key (an NSS database, certificate nickname `jmapmar`) is kept encrypted in the
+private repo `Kaan88/secrets`, file `thunderbird-jmap-mar-signing.tar.gz.enc`. The passphrase is in
+the maintainer's password manager. To restore it:
+
+```
+gh repo clone Kaan88/secrets
+cd secrets
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in thunderbird-jmap-mar-signing.tar.gz.enc | tar -xzf -
+```
+
+This creates `nssdb/` and `jmapmar.der`. Sign a MAR with
+`signmar -d sql:<path>/nssdb -n jmapmar -s in.mar out.mar`. Never commit the key to this repo;
+the cert baked into the updater must match, so losing the key forces a manual reinstall.
+
 Live tests (`mailnews/protocols/jmap/test/live`) run against a local Stalwart server.
 They are skipped unless a JSON file with test accounts exists; see `test/live/head.js`.
 
