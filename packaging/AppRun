@@ -1,7 +1,15 @@
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-# The AppImage mounts/extracts to a different path every launch, so Thunderbird's
-# per-install profile hash (installs.ini) changes each time and it creates a fresh
-# profile. Use the profiles.ini default profile instead.
-export MOZ_LEGACY_PROFILES=1
-exec "$HERE/usr/lib/thunderbird-jmap/thunderbird" "$@"
+BIN="$HERE/usr/lib/thunderbird-jmap/thunderbird"
+# The per-install profile hash comes from the mount path, which changes every launch,
+# and the profile root switches to ~/.thunderbird if that folder exists. Pin one profile folder.
+export MOZ_LEGACY_PROFILES=1   # if the user picks a profile by hand, don't add [Install*] sections
+for a in "$@"; do              # the user chose a profile: don't override it
+  case "$(printf %s "$a" | tr '[:upper:]' '[:lower:]')" in
+    -p|--p|-profile|--profile|-profilemanager|--profilemanager|-createprofile|--createprofile)
+      exec "$BIN" "$@" ;;
+  esac
+done
+PROFILE="${THUNDERBIRD_JMAP_PROFILE:-${XDG_CONFIG_HOME:-$HOME/.config}/thunderbird-jmap/profile}"
+mkdir -p "$PROFILE" && chmod 700 "$PROFILE"
+exec "$BIN" --profile "$PROFILE" "$@"
