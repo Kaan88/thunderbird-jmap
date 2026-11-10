@@ -98,3 +98,5 @@ textarea.long {
   min-height: 14em;
   resize: vertical;
 }
+
+html[data-os="win"] .unix, html:not([data-os="win"]) .win { display: none; }

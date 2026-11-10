@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI Assistant",
   "short_name": "AI Assistant",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "An assistant next to your mail. Ask about a message, write and rewrite, look things up and get things done in your mail, folders, calendar, contacts and JMAP account. Works with an OpenAI-compatible service (OpenAI, Ollama, ...), Anthropic, or Claude Code on your computer. Nothing is sent until you ask; sending and deleting always ask first.",
   "author": "Kaan88",
   "homepage_url": "https://github.com/Kaan88/thunderbird-jmap",

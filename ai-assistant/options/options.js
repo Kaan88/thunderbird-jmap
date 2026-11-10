@@ -213,3 +213,5 @@ getSettings().then(s => {
   fillForm(s);
   updateCount();
 });
+
+document.documentElement.dataset.os = /win/i.test(navigator.platform) ? "win" : "unix";

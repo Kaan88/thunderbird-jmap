@@ -3,7 +3,7 @@
 # Usage: ./build-appimage.sh [path/to/thunderbird-*.linux-x86_64.tar.xz]
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
-TARBALL="${1:-/mnt/E/tb-build/obj-linux/dist/thunderbird-162.0a1.en-US.linux-x86_64.tar.xz}"
+TARBALL="${1:-/home/kaan/tb-obj-linux/dist/thunderbird-162.0a1.en-US.linux-x86_64.tar.xz}"
 OUT="work/Thunderbird-JMAP-162.0a1-x86_64.AppImage"
 APPDIR="work/AppDir"
 [ -f "$TARBALL" ] || { echo "tarball not found: $TARBALL" >&2; exit 1; }
@@ -17,6 +17,9 @@ mv "$APPDIR/usr/lib/thunderbird" "$APPDIR/usr/lib/thunderbird-jmap"
 XPI="$(ai-assistant/build.sh | tail -1)"
 mkdir -p "$APPDIR/usr/lib/thunderbird-jmap/distribution/extensions"
 cp "ai-assistant/$XPI" "$APPDIR/usr/lib/thunderbird-jmap/distribution/extensions/ai-assistant@thunderbird-jmap.xpi"
+# Native helper for "Claude on this computer"; AppRun registers it for the user at start.
+mkdir -p "$APPDIR/usr/share/ai-assistant-native"
+cp ai-assistant/native/host.js ai-assistant/native/mcp-bridge.js ai-assistant/native/install.sh "$APPDIR/usr/share/ai-assistant-native/"
 install -m755 packaging/AppRun "$APPDIR/AppRun"
 cp packaging/thunderbird-jmap.desktop "$APPDIR/"
 cp packaging/thunderbird-jmap.desktop "$APPDIR/usr/share/applications/"

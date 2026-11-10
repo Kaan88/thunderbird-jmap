@@ -24,7 +24,9 @@ function notInstalled(port) {
   const msg = port?.error?.message || "";
   return new ClaudeLocalError(
     /no such native application|not found|manifest/i.test(msg)
-      ? "The helper for Claude on this computer isn't installed. Run native\\install.ps1 from the add-on's source folder (see README), then restart Thunderbird."
+      ? (/win/i.test(navigator.platform)
+        ? "The helper for Claude on this computer isn't installed. Run native\\install.ps1 from the add-on's source folder (see README), then restart Thunderbird."
+        : "The helper for Claude on this computer isn't installed. Run native/install.sh from the add-on's source folder (see README; the Thunderbird-JMAP AppImage does this for you at start), then restart Thunderbird.")
       : `The Claude helper stopped${msg ? `: ${msg}` : "."}`
   );
 }

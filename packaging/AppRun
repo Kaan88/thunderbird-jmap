@@ -1,11 +1,11 @@
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
 BIN="$HERE/usr/lib/thunderbird-jmap/thunderbird"
-# The per-install profile hash comes from the mount path, which changes every launch,
-# and the profile root switches to ~/.thunderbird if that folder exists. Pin one profile folder.
 # Make the "default mail client" check use the stable AppImage path instead of the
 # per-launch mount path, so setting Thunderbird as default sticks.
 [ -n "$APPIMAGE" ] && export MOZ_APP_LAUNCHER="$APPIMAGE"
+# The per-install profile hash comes from the mount path, which changes every launch,
+# and the profile root switches to ~/.thunderbird if that folder exists. Pin one profile folder.
 export MOZ_LEGACY_PROFILES=1   # if the user picks a profile by hand, don't add [Install*] sections
 for a in "$@"; do              # the user chose a profile: don't override it
   case "$(printf %s "$a" | tr '[:upper:]' '[:lower:]')" in
@@ -13,6 +13,26 @@ for a in "$@"; do              # the user chose a profile: don't override it
       exec "$BIN" "$@" ;;
   esac
 done
+
+# Menu entry: (re)create it when the AppImage is first run or moved.
+if [ -n "$APPIMAGE" ] && [ "${THUNDERBIRD_JMAP_NO_INTEGRATION:-0}" != 1 ]; then
+  APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  DESK="$APPS/thunderbird-jmap.desktop"
+  if ! grep -qsFx "Exec=\"$APPIMAGE\" %u" "$DESK"; then
+    ICONDIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/128x128/apps"
+    mkdir -p "$APPS" "$ICONDIR"
+    cp -f "$HERE/thunderbird-jmap.png" "$ICONDIR/thunderbird-jmap.png"
+    sed -e "s|^Exec=.*|Exec=\"$APPIMAGE\" %u|" -e '/^TryExec=/d' "$HERE/thunderbird-jmap.desktop" > "$DESK"
+    command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null
+  fi
+fi
+
+# Register the Claude helper for the AI assistant add-on when Node.js is available (never touches ~/.thunderbird).
+NATIVE="$HERE/usr/share/ai-assistant-native"
+HOSTDIR="${XDG_DATA_HOME:-$HOME/.local/share}/thunderbird-ai-assistant/native"
+if [ -d "$NATIVE" ] && command -v node >/dev/null 2>&1 && ! cmp -s "$NATIVE/host.js" "$HOSTDIR/host.js"; then
+  "$NATIVE/install.sh" >/dev/null 2>&1
+fi
 PROFILE="${THUNDERBIRD_JMAP_PROFILE:-${XDG_CONFIG_HOME:-$HOME/.config}/thunderbird-jmap/profile}"
 mkdir -p "$PROFILE" && chmod 700 "$PROFILE"
 exec "$BIN" --profile "$PROFILE" "$@"

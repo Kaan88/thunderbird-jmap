@@ -57,7 +57,7 @@
 
         <section>
           <h2>Claude on this computer</h2>
-          <p class="muted">Uses the Claude Code app you have installed and its login, so no API key is needed. Needs the small helper from the add-on's <code>native</code> folder (run <code>native\install.ps1</code> once).</p>
+          <p class="muted">Uses the Claude Code app you have installed and its login, so no API key is needed. Needs the small helper from the add-on's <code>native</code> folder (run <code class="win">native\install.ps1</code><code class="unix">native/install.sh</code> once; the Linux AppImage does it for you).</p>
           <label class="check"><input type="checkbox" name="claudeLocal" /> Use Claude on this computer</label>
           <label>Model
             <input type="text" name="claudeModel" list="claude-models" placeholder="claude-sonnet-5-5" />
@@ -70,7 +70,7 @@
             </datalist>
             <small class="muted">The model used by default. All of these can be picked in the panel too; any model name Claude Code accepts works (e.g. opus, sonnet).</small>
           </label>
-          <label>Path to claude.exe (optional)
+          <label>Path to <span class="win">claude.exe</span><span class="unix">claude</span> (optional)
             <input type="text" name="claudePath" placeholder="Found automatically" />
           </label>
           <div class="row"><button type="button" data-test="claude">Test</button><span class="test-result" id="test-claude"></span></div>
